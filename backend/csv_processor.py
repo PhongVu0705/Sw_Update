@@ -1,7 +1,6 @@
 import os
 import pandas as pd
 
-
 def export_filtered_csv(
     input_path: str,
     prefix: str = "74",
@@ -36,3 +35,25 @@ def export_filtered_csv(
         filtered_df.to_csv(final_output_path, index=False, header=False)
 
     return final_output_path
+
+def get_commands_from_csv(input_path: str, prefix: str = "74") -> list:
+    """
+    Hàm xử lý trọn gói: Lọc CSV -> Xuất file Temp -> Đọc ra danh sách lệnh.
+    Trả về dạng list các chuỗi Hex.
+    """
+    commands = []
+    try:
+        # Bước 1: Lọc dữ liệu bằng hàm có sẵn
+        filtered_csv_path = export_filtered_csv(input_path, prefix=prefix, message_only=True)
+        
+        # Bước 2: Đọc file vừa lọc thành list
+        with open(filtered_csv_path, mode="r", encoding="utf-8") as f:
+            for line in f:
+                cmd = line.strip()
+                if cmd:
+                    commands.append(cmd)
+                    
+    except Exception as e:
+        print(f"❌ Lỗi trong quá trình xử lý file CSV: {e}")
+        
+    return commands

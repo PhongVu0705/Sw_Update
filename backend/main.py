@@ -1,176 +1,124 @@
 import os
-import queue
-import time
-from csv_processor import export_filtered_csv
 from opelink_comm import OpenLinkComm, select_port
-
-# INIT_COMMANDS = [
-#     "70 01 01 01",
-#     "01 01 0A 00 3B 33 33 33 33 33 33 33 33 01 DF"
-# ]
-
-# msg_queue = queue.Queue()
-# last_rx_frame = None  # Lưu trữ frame phản hồi gần nhất để kiểm tra Header
-
-# def on_rx_callback(frame: bytes):
-#     global last_rx_frame
-#     last_rx_frame = frame
-#     msg_queue.put(f"[MCU RX]: {frame.hex(' ').upper()}")
-
-# def on_tx_callback(frame: bytes):
-#     msg_queue.put(f"[TX  ->]: {frame.hex(' ').upper()}")
-
-# def print_queued_messages():
-#     while not msg_queue.empty():
-#         print(msg_queue.get())
-
-# def execute_command_list(comm: OpenLinkComm, cmd_list: list) -> bool:
-#     """
-#     Gửi lần lượt tập lệnh xuống MCU.
-#     Trả về False và dừng gửi ngay nếu bị Timeout hoặc nhận được Header 82/83.
-#     """
-#     global last_rx_frame
-
-#     for idx, cmd in enumerate(cmd_list, start=1):
-#         print(f"\n--- [Lệnh {idx}/{len(cmd_list)}]: {cmd} ---")
-        
-#         last_rx_frame = None  # Reset lại frame phản hồi trước khi gửi lệnh mới
-#         success = comm.send_hex(cmd, timeout_ms=5000)
-
-#         time.sleep(0.02)
-#         print_queued_messages()
-
-#         # 1. Kiểm tra Timeout (Quá 5s không có ACK)
-#         if not success:
-#             print("⚠️ Timeout (5s): Không nhận được phản hồi từ MCU. Dừng toàn bộ chương trình!")
-#             return False
-
-#         # 2. Kiểm tra nếu tín hiệu nhận được có Header là 82 hoặc 83
-#         # if last_rx_frame and last_rx_frame[0] in (0x82, 0x83):
-#         #     header_hex = f"{last_rx_frame[0]:02X}"
-#         #     print(f"🛑 Nhận tín hiệu Header {header_hex} từ MCU. Dừng toàn bộ chương trình!")
-#         #     return False
-
-#     return True
-
-# def read_commands_from_filtered_csv(csv_path: str) -> list:
-#     commands = []
-#     try:
-#         with open(csv_path, mode="r", encoding="utf-8") as f:
-#             for line in f:
-#                 cmd = line.strip()
-#                 if cmd:
-#                     commands.append(cmd)
-#     except Exception as e:
-#         print(f"❌ Lỗi khi đọc file CSV kết quả: {e}")
-#     return commands
-
-# def main():
-#     selected_port = select_port()
-#     if not selected_port:
-#         print("No com port selected. Exiting the program.")
-#         return
-
-#     port_name = selected_port["port"]
-
-#     comm = OpenLinkComm(
-#         port=port_name,
-#         baud_rate=115200,
-#         on_rx=on_rx_callback,
-#         on_tx=on_tx_callback,
-#     )
-
-#     if not comm.connect():
-#         print(f"Cannot connect to the port: {port_name}!")
-#         return
-
-#     print(f"\n✅ Đã kết nối thành công tới cổng {port_name}")
-#     print("👉 Nhập đường dẫn file CSV để xử lý & gửi tập lệnh.")
-#     print("👉 Nhập trực tiếp lệnh Hex để gửi đơn lẻ.")
-#     print("👉 Nhập 'q' hoặc 'exit' để thoát.\n")
-
-#     try:
-#         while True:
-#             print_queued_messages()
-#             user_input = input("[HEX / CSV INPUT] > ").strip().strip("\"'")
-
-#             if user_input.lower() in ["q", "exit"]:
-#                 print("Đang dừng chương trình...")
-#                 break
-
-#             if not user_input:
-#                 continue
-
-#             # Xử lý khi input là file CSV
-#             if user_input.lower().endswith(".csv") or os.path.exists(user_input):
-#                 if not os.path.exists(user_input):
-#                     print(f"❌ File không tồn tại: {user_input}")
-#                     continue
-
-#                 try:
-#                     print(f"\n🔄 Đang xử lý lọc dữ liệu CSV từ: {user_input}...")
-                    
-#                     filtered_csv_path = export_filtered_csv(
-#                         input_path=user_input, 
-#                         prefix="74", 
-#                         message_only=True
-#                     )
-#                     print(f"✅ Đã lọc thành công. File lưu tại: {filtered_csv_path}")
-
-#                     csv_cmds = read_commands_from_filtered_csv(filtered_csv_path)
-
-#                     if not csv_cmds:
-#                         print("⚠️ Không tìm thấy lệnh phù hợp trong file CSV!")
-#                         continue
-
-#                     full_cmd_list = INIT_COMMANDS + csv_cmds
-
-#                     print(f"🚀 Bắt đầu gửi {len(full_cmd_list)} lệnh (2 lệnh Init + {len(csv_cmds)} lệnh CSV)...")
-                    
-#                     # Thực thi truyền danh sách lệnh và kiểm tra trạng thái trả về
-#                     completed = execute_command_list(comm, full_cmd_list)
-#                     if completed:
-#                         print("\n✅ Hoàn tất gửi toàn bộ tập lệnh thành công!")
-#                     else:
-#                         print("\n❌ Tiến trình bị hủy bỏ do lỗi / tín hiệu dừng từ MCU!")
-
-#                 except Exception as e:
-#                     print(f"❌ Lỗi trong quá trình xử lý file CSV: {e}")
-
-#             # Xử lý khi nhập 1 lệnh Hex đơn lẻ
-#             else:
-#                 execute_command_list(comm, [user_input])
-
-#             print()
-
-#     except KeyboardInterrupt:
-#         print("\nĐã hủy bởi người dùng.")
-#     except Exception as e:
-#         print(f"\nĐã xảy ra lỗi: {e}")
-#     finally:
-#         comm.disconnect()
-#         print("🔌 Đã ngắt kết nối cổng COM.")
-
-from hex_processor import process_pipeline
+from csv_processor import get_commands_from_csv
+from command_runner import (
+    on_rx_callback, 
+    on_tx_callback, 
+    print_queued_messages,
+    execute_command_list, 
+    execute_bin_flashing_sequence
+)
+from script_builder import generate_and_save_bin_script, SeqIdTracker, build_frame
 
 def main():
-    print("=== CHƯƠNG TRÌNH XỬ LÝ FIRMWARE BIN -> BLOCK TXT ===")
-    user_input = input("Nhập đường dẫn file .bin (hoặc kéo thả file vào đây): ")
-    
-    if not user_input.strip():
-        print("[LỖI] Đường dẫn không được để trống!")
+    selected_port = select_port()
+    if not selected_port:
+        print("Không chọn cổng COM. Dừng chương trình.")
         return
 
-    print("\nĐang xử lý dữ liệu...")
-    result = process_pipeline(user_input, base_address=0x08000000, block_size=246)
+    port_name = selected_port["port"]
+    comm = OpenLinkComm(
+        port=port_name,
+        baud_rate=115200,
+        on_rx=on_rx_callback,
+        on_tx=on_tx_callback,
+    )
 
-    if result and result.get("status") == "SUCCESS":
-        print(f"\n[OK] Xử lý hoàn tất!")
-        print(f" - Tổng dung lượng Data : {result['total_bytes']} Bytes")
-        print(f" - Tổng số Block        : {result['total_blocks']} Block(s)")
-        print(f" - File TXT đầu ra      : {result['output_path']}")
-    elif result and result.get("status") == "ERROR":
-        print(f"\n[LỖI] Xử lý thất bại: {result['message']}")
+    if not comm.connect():
+        print(f"Không thể kết nối cổng: {port_name}!")
+        return
+
+    print(f"\n✅ Kết nối thành công cổng {port_name}")
+
+    try:
+        while True:
+            print_queued_messages()
+            print("\n================ CHỌN CHỨC NĂNG ================")
+            print("1. Nhập file .BIN để nạp Firmware (Tạo Script TXT -> Xác nhận Update)")
+            print("2. Nhập file .CSV tập lệnh để gửi đơn thuần")
+            print("3. Nhập trực tiếp chuỗi Hex gửi thủ công")
+            print("q. Thoát chương trình")
+            
+            choice = input("\n[LỰA CHỌN] > ").strip().strip("\"'")
+
+            if choice.lower() in ["q", "exit"]:
+                print("Đang thoát...")
+                break
+
+            # OPTION 1: NẠP TỪ FILE BIN
+            if choice == "1" or choice.lower().endswith(".bin"):
+                bin_path = choice if choice.lower().endswith(".bin") else input("👉 Nhập đường dẫn file .BIN: ").strip().strip("\"'")
+                if not os.path.exists(bin_path):
+                    print(f"❌ File không tồn tại: {bin_path}")
+                    continue
+
+                tool_choice = input("👉 Chọn Tool (M12/M18) [Default: M12]: ").strip().upper()
+                tool_type = "M18" if tool_choice == "M18" else "M12"
+
+                # Sinh kịch bản lệnh bằng script_builder
+                script_data = generate_and_save_bin_script(bin_path, tool_type=tool_type)
+
+                if script_data:
+                    confirm = input("\n❓ Bạn có muốn UPDATE vào Tool bằng tập lệnh này không? (Y/N): ").strip().upper()
+                    if confirm in ["Y", "YES"]:
+                        # Chạy chuỗi lệnh Flashing
+                        execute_bin_flashing_sequence(comm, script_data)
+                    else:
+                        print("⏸️ Đã hủy tiến trình Update.")
+
+            # OPTION 2: NẠP TỪ FILE CSV
+            elif choice == "2" or choice.lower().endswith(".csv"):
+                csv_path = choice if choice.lower().endswith(".csv") else input("👉 Nhập đường dẫn file .CSV: ").strip().strip("\"'")
+                if not os.path.exists(csv_path):
+                    print(f"❌ File không tồn tại: {csv_path}")
+                    continue
+
+                # Hỏi người dùng chọn Tool để quyết định lệnh Target
+                tool_choice = input("👉 Chọn Tool (M12/M18) [Default: M12]: ").strip().upper()
+                tool_type = "M18" if tool_choice == "M18" else "M12"
+
+                print(f"\n🔄 Đang xử lý lọc dữ liệu CSV từ: {csv_path}...")
+                
+                # Gọi hàm xử lý trọn gói từ csv_processor
+                csv_cmds = get_commands_from_csv(csv_path, prefix="74")
+
+                if not csv_cmds:
+                    print("⚠️ Không tìm thấy lệnh phù hợp hoặc file rỗng!")
+                    continue
+
+                # --- THÊM 2 LỆNH KHỞI TẠO TRƯỚC KHI GỬI CSV ---
+                init_cmds = []
+                
+                # Lệnh 1: Target
+                cmd1_base = "70 01 01 11" if tool_type == "M12" else "70 01 01 01"
+                init_cmds.append(build_frame(cmd1_base))
+
+                # Lệnh 2: Metcopassword (Sử dụng SeqIdTracker bắt đầu từ 05 vì lệnh 1 đã dùng 01)
+                seq = SeqIdTracker(start=5)
+                seq_id = seq.get_and_inc()
+                cmd2_base = f"01 {seq_id} 0A 00 3B 33 33 33 33 33 33 33 33"
+                init_cmds.append(build_frame(cmd2_base))
+
+                # Ghép 2 lệnh khởi tạo vào trước danh sách lệnh CSV
+                full_cmds = init_cmds + csv_cmds
+
+                print(f"🚀 Bắt đầu gửi {len(full_cmds)} lệnh (2 lệnh Khởi tạo + {len(csv_cmds)} lệnh CSV)...")
+                
+                # Chạy toàn bộ danh sách lệnh
+                execute_command_list(comm, full_cmds)
+
+            # OPTION 3: NHẬP LỆNH HEX ĐƠN LẺ
+            else:
+                execute_command_list(comm, [choice])
+
+    except KeyboardInterrupt:
+        print("\nĐã hủy bởi người dùng.")
+    except Exception as e:
+        print(f"\nĐã xảy ra lỗi: {e}")
+    finally:
+        comm.disconnect()
+        print("🔌 Đã ngắt kết nối cổng COM.")
+
 
 if __name__ == "__main__":
     main()
