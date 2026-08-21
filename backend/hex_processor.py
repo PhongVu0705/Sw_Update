@@ -2,7 +2,7 @@ import os
 from intelhex import IntelHex
 
 def convert_bin_to_hex_temp(bin_path, output_dir, base_address=0x08000000):
-    """Chuyển file .bin thành file .hex tạm thời trong thư mục temp"""
+    """Convert .bin file to temporary .hex file in the temp directory"""
     file_name = os.path.splitext(os.path.basename(bin_path))[0] + ".temp.hex"
     hex_temp_path = os.path.join(output_dir, file_name)
     
@@ -13,10 +13,10 @@ def convert_bin_to_hex_temp(bin_path, output_dir, base_address=0x08000000):
 
 def process_hex_to_blocks(hex_path, block_size=246):
     """
-    Xử lý file HEX:
-    - Lọc record type (byte thứ 3) == '00'
-    - Xóa 3 byte đầu (Byte Count + Address) và 1 byte cuối (Checksum)
-    - Concatenate data và chia thành các block 246 bytes
+    Process HEX file:
+    - Filter record type (3rd byte) == '00'
+    - Remove first 3 bytes (Byte Count + Address) and last byte (Checksum)
+    - Concatenate data and split into 246-byte blocks
     """
     full_data_hex = ""
 
@@ -30,15 +30,15 @@ def process_hex_to_blocks(hex_path, block_size=246):
             if len(raw_hex) < 10:
                 continue
 
-            # Ký tự index 6:8 tương ứng với byte thứ 3 (Record Type)
+            # Character index 6:8 corresponds to 3rd byte (Record Type)
             record_type = raw_hex[6:8]
 
             if record_type == '00':
-                # Bỏ 4 byte đầu (Byte Count + Address + Record Type) và 1 byte cuối (Checksum)
+                # Remove first 4 bytes (Byte Count + Address + Record Type) and last byte (Checksum)
                 data_payload = raw_hex[8:-2]
                 full_data_hex += data_payload
 
-    # 1 Byte = 2 ký tự HEX -> Block 246 Bytes = 492 ký tự HEX
+    # 1 Byte = 2 HEX characters -> Block 246 Bytes = 492 HEX characters
     char_block_size = block_size * 2
     blocks = [
         full_data_hex[i:i + char_block_size]
@@ -47,33 +47,40 @@ def process_hex_to_blocks(hex_path, block_size=246):
 
     return blocks, full_data_hex
 
-def process_pipeline(bin_path, base_address=0x08000000, block_size=246):
+def _log(message: str, log_callback=None):
+    """Helper: log via callback if available, otherwise print to console."""
+    if log_callback:
+        log_callback(message)
+    else:
+        print(message)
+
+def process_pipeline(bin_path, base_address=0x08000000, block_size=246, log_callback=None):
     """
-    Hàm pipeline xử lý chính:
-    - Lấy đường dẫn file BIN
-    - Tạo thư mục temp ở cấp script
-    - Convert BIN -> HEX -> Lọc Record '00' -> Chia Block -> Xuất TXT
+    Main pipeline processing function:
+    - Get BIN file path
+    - Create temp directory at script level
+    - Convert BIN -> HEX -> Filter Record '00' -> Split Blocks -> Export TXT
     """
     bin_path = bin_path.strip("'\"").strip()
 
     if not os.path.exists(bin_path):
-        print(f"\n[LỖI] Không tìm thấy file: {bin_path}")
+        _log(f"\n[ERROR] File not found: {bin_path}", log_callback)
         return None
 
-    # Xác định thư mục 'temp' cùng cấp script
+    # Determine 'temp' directory at script level
     script_dir = os.path.dirname(os.path.abspath(__file__))
     temp_dir = os.path.join(script_dir, "temp")
     if not os.path.exists(temp_dir):
         os.makedirs(temp_dir, exist_ok=True)
 
-    # 1. Convert .bin sang file .hex tạm
+    # 1. Convert .bin to temporary .hex file
     hex_temp_path = convert_bin_to_hex_temp(bin_path, temp_dir, base_address)
 
     try:
-        # 2. Lọc, xóa byte thừa, concate & phân block
+        # 2. Filter, remove extra bytes, concatenate & split blocks
         blocks, full_data = process_hex_to_blocks(hex_temp_path, block_size=block_size)
 
-        # 3. Xuất ra file .txt trong thư mục temp
+        # 3. Export to .txt file in temp directory
         base_name = os.path.splitext(os.path.basename(bin_path))[0]
         txt_out_path = os.path.join(temp_dir, f"{base_name}_blocks.txt")
 
@@ -95,6 +102,6 @@ def process_pipeline(bin_path, base_address=0x08000000, block_size=246):
         }
 
     finally:
-        # Xóa file HEX tạm thời sau khi xử lý xong
+        # Remove temporary HEX file after processing
         if os.path.exists(hex_temp_path):
             os.remove(hex_temp_path)

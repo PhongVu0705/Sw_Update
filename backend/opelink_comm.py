@@ -1,6 +1,6 @@
 """
 Module: opelink_comm
-Mô tả: Thư viện kết nối và truyền nhận dữ liệu Hex với MCU qua giao thức OpenLink.
+Description: Library for connecting and sending/receiving Hex data with MCU via OpenLink protocol.
 """
 
 import serial
@@ -11,7 +11,7 @@ from typing import Callable, List, Dict, Optional
 
 
 def list_ports() -> List[Dict[str, str]]:
-    """Trả về danh sách các cổng COM khả dụng trên hệ thống."""
+    """Return the list of available COM ports on the system."""
     return [
         {"port": p.device, "description": p.description, "hwid": p.hwid}
         for p in serial.tools.list_ports.comports()
@@ -57,7 +57,7 @@ class OpenLinkComm:
         self.is_running = False
         self.rx_buffer = bytearray()
         self.rx_thread = None
-        self.last_rx_time = time.time()  # Theo dõi thời điểm nhận byte cuối cùng
+        self.last_rx_time = time.time()  # Track the time of the last received byte
 
         self.pending_seq_events = {}
         self.seq_lock = threading.Lock()
@@ -70,14 +70,14 @@ class OpenLinkComm:
 
     @staticmethod
     def ensure_checksum(data: bytes) -> bytes:
-        """Tự động bổ sung 2 byte Checksum nếu chưa có."""
+        """Automatically append 2-byte Checksum if not already present."""
         if len(data) >= 3 and (len(data) - 3) == data[2]:
             checksum = sum(data) & 0xFFFF
             return data + bytes([(checksum >> 8) & 0xFF, checksum & 0xFF])
         return data
 
     def connect(self) -> bool:
-        """Mở cổng Serial và khởi chạy luồng đọc RX."""
+        """Open Serial port and start RX reading thread."""
         try:
             self.ser = serial.Serial(self.port, self.baud_rate, timeout=0.1)
             self.is_running = True
@@ -88,7 +88,7 @@ class OpenLinkComm:
             return False
 
     def disconnect(self):
-        """Đóng cổng Serial và dừng luồng RX."""
+        """Close Serial port and stop RX thread."""
         self.is_running = False
         if self.rx_thread and self.rx_thread.is_alive():
             self.rx_thread.join(timeout=1.0)
@@ -97,8 +97,8 @@ class OpenLinkComm:
 
     def send_hex(self, raw_hex: str, timeout_ms: int = 5000) -> bool:
         """
-        Gửi chuỗi Hex xuống MCU.
-        :param timeout_ms: Thời gian chờ phản hồi ACK (mặc định 5000ms = 5s).
+        Send Hex string to MCU.
+        :param timeout_ms: Time to wait for ACK response (default 5000ms = 5s).
         """
         clean_hex = "".join(raw_hex.strip().split())
         if not clean_hex or len(clean_hex) % 2 != 0:
@@ -135,7 +135,7 @@ class OpenLinkComm:
         if self.on_tx:
             self.on_tx(frame)
 
-        # Chờ tối đa 10s (timeout_ms) cho tới khi nhận ACK
+        # Wait up to 10s (timeout_ms) for ACK
         success = event.wait(timeout=timeout_ms / 1000.0)
 
         with self.seq_lock:
@@ -144,17 +144,17 @@ class OpenLinkComm:
         return success
 
     def _receiver_loop(self):
-        """Đọc liên tục từ Serial và kiểm tra timeout 5s cho buffer dở dang."""
+        """Continuously read from Serial and check 5s timeout for incomplete buffer."""
         while self.is_running:
             try:
                 if self.ser and self.ser.in_waiting > 0:
                     chunk = self.ser.read(self.ser.in_waiting)
                     if chunk:
-                        self.last_rx_time = time.time()  # Cập nhật mốc thời gian nhận dữ liệu mới
+                        self.last_rx_time = time.time()  # Update timestamp of last received data
                         self.rx_buffer.extend(chunk)
                         self._process_rx_buffer()
                 else:
-                    # Nếu buffer còn dữ liệu dở dang mà quá 5s không nhận được byte mới -> Reset buffer
+                    # If buffer has incomplete data and no new byte received for 5s -> Reset buffer
                     if len(self.rx_buffer) > 0 and (time.time() - self.last_rx_time > 5.0):
                         self.rx_buffer.clear()
                     time.sleep(0.005)
@@ -162,14 +162,14 @@ class OpenLinkComm:
                 break
 
     def _process_rx_buffer(self):
-        """Cắt gói tin ngay khi nhận đủ byte."""
+        """Extract packets as soon as enough bytes are received."""
         while len(self.rx_buffer) > 0:
             first_byte = self.rx_buffer[0]
 
-            # 1. Khung 2 Bytes (Header 80, 82)
+            # 1. 2-Byte Frame (Header 80, 82)
             if first_byte in (0x80, 0x82):
                 if len(self.rx_buffer) < 2:
-                    break  # Chưa đủ 2 byte -> chờ tiếp
+                    break  # Not enough 2 bytes -> wait
 
                 seq_id = self.rx_buffer[1]
                 frame = bytes(self.rx_buffer[:2])
@@ -182,16 +182,16 @@ class OpenLinkComm:
                     if event := self.pending_seq_events.get(seq_id):
                         event.set()
 
-            # 2. Khung dài (Header 85, 83, 81)
+            # 2. Long Frame (Header 85, 83, 81)
             elif first_byte in (0x85, 0x83, 0x81):
                 if len(self.rx_buffer) < 3:
-                    break  # Chưa đủ 3 byte để lấy payload_len -> chờ tiếp
+                    break  # Not enough 3 bytes to get payload_len -> wait
 
                 payload_len = self.rx_buffer[2]
                 total_len = 3 + payload_len + 2  # Total = Header(1) + Seq(1) + Len(1) + Data + Checksum(2)
 
                 if len(self.rx_buffer) < total_len:
-                    break  # Chưa đủ toàn bộ gói tin -> chờ tiếp
+                    break  # Not enough full packet -> wait
 
                 seq_id = self.rx_buffer[1]
                 frame = bytes(self.rx_buffer[:total_len])
@@ -200,13 +200,13 @@ class OpenLinkComm:
                 if self.on_rx:
                     self.on_rx(frame)
 
-                # Chỉ mở khóa gửi lệnh mới với ACK thuộc 81, 83
+                # Only unlock sending new command with ACK belonging to 81, 83
                 if first_byte in (0x81, 0x83):
                     with self.seq_lock:
                         if event := self.pending_seq_events.get(seq_id):
                             event.set()
 
-            # 3. Loại bỏ byte rác
+            # 3. Remove garbage byte
             else:
                 del self.rx_buffer[:1]
 

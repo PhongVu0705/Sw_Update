@@ -4,24 +4,24 @@ from hex_processor import process_pipeline
 
 def build_frame(hex_cmd_str: str) -> str:
     """
-    Tự động tính checksum:
-    - Tính tổng tất cả các byte.
-    - Format thành 2 bytes (XX XX) và nối vào cuối chuỗi.
+    Automatically calculate checksum:
+    - Sum all bytes.
+    - Format as 2 bytes (XX XX) and append to the end of the string.
     """
     data_bytes = bytes.fromhex(hex_cmd_str.strip())
     total_sum = sum(data_bytes)
     
-    # Ép về định dạng 4 ký tự Hex (vd: 013A)
+    # Force to 4-character Hex format (e.g. 013A)
     cs_hex = f"{total_sum:04X}"
     
-    # Cắt thành 2 số XX XX (vd: "01 3A")
+    # Split into 2 numbers XX XX (e.g. "01 3A")
     cs_str = f"{cs_hex[:2]} {cs_hex[2:]}"
     
     return f"{hex_cmd_str.strip()} {cs_str}"
 
 
 class SeqIdTracker:
-    """Tăng 4 mỗi bậc: 01 -> 05 -> 09 -> 0D ... FD -> 01"""
+    """Increment by 4 each step: 01 -> 05 -> 09 -> 0D ... FD -> 01"""
     def __init__(self, start=1):
         self.val = start
 
@@ -33,18 +33,26 @@ class SeqIdTracker:
         return current_str
 
 
-def generate_and_save_bin_script(bin_path: str, tool_type: str = "M12"):
+def _log(message: str, log_callback=None):
+    """Helper: log via callback if available, otherwise print to console."""
+    if log_callback:
+        log_callback(message)
+    else:
+        print(message)
+
+
+def generate_and_save_bin_script(bin_path: str, tool_type: str = "M12", log_callback=None):
     """
-    Tiền xử lý file BIN và tạo sẵn danh sách lệnh Flashing.
-    Ghi danh sách lệnh này ra file .txt trong thư mục temp.
+    Pre-process BIN file and generate the Flashing command list.
+    Write this command list to a .txt file in the temp directory.
     """
-    print("\n🔄 1. Đang xử lý file BIN...")
-    result = process_pipeline(bin_path, base_address=0x08000000, block_size=246)
+    _log("\n🔄 1. Processing BIN file...", log_callback)
+    result = process_pipeline(bin_path, base_address=0x08000000, block_size=246, log_callback=log_callback)
     if not result or result.get("status") != "SUCCESS":
-        print(f"❌ Lỗi xử lý file BIN: {result.get('message') if result else 'Unknown'}")
+        _log(f"❌ Error processing BIN file: {result.get('message') if result else 'Unknown'}", log_callback)
         return None
 
-    # Đọc các block hex từ file trung gian
+    # Read hex blocks from intermediate file
     with open(result["output_path"], "r", encoding="utf-8") as f:
         hex_blocks = [line.strip() for line in f if line.strip()]
 
@@ -53,7 +61,7 @@ def generate_and_save_bin_script(bin_path: str, tool_type: str = "M12"):
     
     script_commands = []
 
-    # 1. Target (Không chứa ký tự M12/M18)
+    # 1. Target (No M12/M18 character)
     cmd1 = "70 01 01 11" if tool_type == "M12" else "70 01 01 01"
     script_commands.append(build_frame(cmd1))
 
@@ -61,15 +69,15 @@ def generate_and_save_bin_script(bin_path: str, tool_type: str = "M12"):
     seq_id = seq.get_and_inc()
     script_commands.append(build_frame(f"01 {seq_id} 0A 00 3B 33 33 33 33 33 33 33 33"))
 
-    # 3. Lệnh Get Params
+    # 3. Get Params command
     seq_id = seq.get_and_inc()
     script_commands.append(build_frame(f"74 {seq_id} 01 15"))
 
-    # 4. Lệnh 74 <SeqID> 08 11 00 X4 ... (Placeholder, không build frame ở bước này)
+    # 4. Command 74 <SeqID> 08 11 00 X4 ... (Placeholder, don't build frame at this step)
     seq_id = seq.get_and_inc()
     script_commands.append(f"DYNAMIC_CMD_4:{seq_id}")
 
-    # 5. Lệnh 74 <SeqID> 08 11 X5 X6 ... (Placeholder, không build frame ở bước này)
+    # 5. Command 74 <SeqID> 08 11 X5 X6 ... (Placeholder, don't build frame at this step)
     seq_id = seq.get_and_inc()
     script_commands.append(f"DYNAMIC_CMD_5:{seq_id}")
 
@@ -78,7 +86,7 @@ def generate_and_save_bin_script(bin_path: str, tool_type: str = "M12"):
     cmd6 = f"70 {seq_id} 01 11" if tool_type == "M12" else f"70 {seq_id} 01 01"
     script_commands.append(build_frame(cmd6))
 
-    # 7. Lệnh cố định
+    # 7. Fixed command
     script_commands.append("74 F5 01 10 01 7A")
 
     # 8. Target
@@ -86,10 +94,10 @@ def generate_and_save_bin_script(bin_path: str, tool_type: str = "M12"):
     cmd8 = f"70 {seq_id} 01 11" if tool_type == "M12" else f"70 {seq_id} 01 01"
     script_commands.append(build_frame(cmd8))
 
-    # 9. Lệnh cố định
+    # 9. Fixed command
     script_commands.append("74 FC 01 13 01 84")
 
-    # 10. Tập gói A
+    # 10. Packet set A
     data_offset = 0
     for block_hex in hex_blocks:
         seq_id = seq.get_and_inc()
@@ -104,23 +112,23 @@ def generate_and_save_bin_script(bin_path: str, tool_type: str = "M12"):
         cmd_length = 1 + 3 + block_len
         len_str = f"{cmd_length:02X}"
 
-        # Phân tách chuỗi data thành từng byte (cách nhau bởi khoảng trắng)
+        # Split data string into individual bytes (separated by spaces)
         spaced_block_hex = " ".join(block_hex[i:i+2] for i in range(0, len(block_hex), 2))
 
-        # Ghép chuỗi lệnh với data đã có khoảng trắng
+        # Build command string with spaced data
         payload_str = f"74 {seq_id} {len_str} 12 {d1} {d2} {d3} {spaced_block_hex}"
         script_commands.append(build_frame(payload_str))
 
         data_offset += block_len
 
-    # 11 & 12. Lệnh kết thúc
+    # 11 & 12. End commands
     seq_id = seq.get_and_inc()
     script_commands.append(build_frame(f"74 {seq_id} 01 03"))
 
     seq_id = seq.get_and_inc()
     script_commands.append(build_frame(f"74 {seq_id} 01 13"))
 
-    # Xuất ra file TXT kịch bản lệnh
+    # Export command script to TXT file
     script_dir = os.path.dirname(os.path.abspath(__file__))
     temp_dir = os.path.join(script_dir, "temp")
     base_name = os.path.splitext(os.path.basename(bin_path))[0]
@@ -130,8 +138,8 @@ def generate_and_save_bin_script(bin_path: str, tool_type: str = "M12"):
         for cmd in script_commands:
             f.write(f"{cmd}\n")
 
-    print(f"✅ Đã tạo kịch bản tập lệnh thành công! TỔNG LỆNH: {len(script_commands)}")
-    print(f"📄 File tập lệnh TXT: {script_txt_path}")
+    _log(f"✅ Command script generated successfully! TOTAL COMMANDS: {len(script_commands)}", log_callback)
+    _log(f"📄 Script TXT file: {script_txt_path}", log_callback)
 
     return {
         "script_path": script_txt_path,
