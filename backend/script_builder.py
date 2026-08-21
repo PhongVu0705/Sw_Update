@@ -20,6 +20,33 @@ def build_frame(hex_cmd_str: str) -> str:
     return f"{hex_cmd_str.strip()} {cs_str}"
 
 
+def build_frame_custom_checksum(hex_cmd_str: str) -> str:
+    """
+    Calculate checksum per spec:
+    - Data starts from byte 4 (index 3).
+    - Length of data is byte 3 (index 2).
+    - Checksum = sum of the data bytes, formatted as 2 bytes (XX XX).
+    """
+    data_bytes = bytes.fromhex(hex_cmd_str.strip())
+    if len(data_bytes) < 3:
+        raise ValueError("Command too short to calculate checksum")
+
+    data_len = data_bytes[2]
+    data_start = 3
+    data_end = data_start + data_len
+    data_slice = data_bytes[data_start:data_end]
+
+    total_sum = sum(data_slice)
+
+    # Force to 4-character Hex format (e.g. 013A)
+    cs_hex = f"{total_sum:04X}"
+
+    # Split into 2 numbers XX XX (e.g. "01 3A")
+    cs_str = f"{cs_hex[:2]} {cs_hex[2:]}"
+
+    return f"{hex_cmd_str.strip()} {cs_str}"
+
+
 class SeqIdTracker:
     """Increment by 4 each step: 01 -> 05 -> 09 -> 0D ... FD -> 01"""
     def __init__(self, start=1):

@@ -47,6 +47,44 @@ def send_and_get_rx(comm: OpenLinkComm, hex_cmd: str, timeout_ms=5000, log_callb
 
     return last_rx_frame
 
+
+def send_and_get_final_rx(comm: OpenLinkComm, hex_cmd: str, timeout_ms=5000, log_callback=None) -> bytes:
+    """
+    Send command and wait for the final response from MCU.
+    - 0x85: keep waiting (multi-frame response)
+    - 0x80/0x81: show result
+    - 0x82/0x83: cannot get data
+    """
+    global last_rx_frame
+    last_rx_frame = None
+
+    _log(f"\n--- [TX]: {hex_cmd} ---", log_callback)
+    success = comm.send_no_wait(bytes.fromhex("".join(hex_cmd.strip().split())))
+    time.sleep(0.05)
+    print_queued_messages(log_callback)
+
+    if not success:
+        _log("⚠️ Failed to send command!", log_callback)
+        return None
+
+    # Wait for the final response (0x80/0x81/0x82/0x83), skipping 0x85 frames
+    deadline = time.time() + timeout_ms / 1000.0
+    while time.time() < deadline:
+        time.sleep(0.05)
+        print_queued_messages(log_callback)
+
+        if last_rx_frame is not None:
+            first_byte = last_rx_frame[0]
+            if first_byte == 0x85:
+                # Keep waiting for more frames
+                last_rx_frame = None
+                continue
+            elif first_byte in (0x80, 0x81, 0x82, 0x83):
+                return last_rx_frame
+
+    _log("⚠️ Timeout or no response from MCU!", log_callback)
+    return None
+
 def execute_command_list(comm: OpenLinkComm, cmd_list: list, log_callback=None, progress_callback=None) -> bool:
     """Send commands sequentially from a prepared list (for CSV or single Hex)"""
     total = len(cmd_list)

@@ -12,17 +12,28 @@ from command_runner import (
     print_queued_messages,
     execute_command_list,
     execute_bin_flashing_sequence,
+    send_and_get_final_rx,
 )
-from script_builder import generate_and_save_bin_script, SeqIdTracker, build_frame
+from script_builder import (
+    generate_and_save_bin_script,
+    SeqIdTracker,
+    build_frame,
+    build_frame_custom_checksum,
+)
 from csv_processor import get_commands_from_csv
 
 # ============================================================
 # UI CONFIGURATION
 # ============================================================
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("blue")
+ctk.set_appearance_mode("light")
+_theme_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "milwaukee_theme.json")
+ctk.set_default_color_theme(_theme_path)
 
 BAUD_RATE = 115200
+
+# Border style dùng chung cho các khối (frame) trong GUI - làm viền đậm hơn
+BLOCK_BORDER_WIDTH = 2
+BLOCK_BORDER_COLOR = "#4a4a4a"
 
 
 class SwUpdateApp(ctk.CTk):
@@ -71,12 +82,15 @@ class SwUpdateApp(ctk.CTk):
             self.header_frame,
             text="● Not connected",
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="#FF6B6B",
+            text_color="#d01b2e",
         )
         self.status_label.pack(side="right")
 
         # ---------- Connection section ----------
-        self.conn_frame = ctk.CTkFrame(self, corner_radius=10)
+        self.conn_frame = ctk.CTkFrame(
+            self, corner_radius=10,
+            border_width=BLOCK_BORDER_WIDTH, border_color=BLOCK_BORDER_COLOR,
+        )
         self.conn_frame.pack(fill="x", padx=20, pady=10)
 
         ctk.CTkLabel(self.conn_frame, text="COM PORT:", font=ctk.CTkFont(size=14, weight="bold")).pack(
@@ -97,7 +111,10 @@ class SwUpdateApp(ctk.CTk):
         self.connect_btn.pack(side="left", padx=5, pady=10)
 
         # ---------- Function tabs ----------
-        self.tabview = ctk.CTkTabview(self, corner_radius=10)
+        self.tabview = ctk.CTkTabview(
+            self, corner_radius=10,
+            border_width=BLOCK_BORDER_WIDTH, border_color=BLOCK_BORDER_COLOR,
+        )
         self.tabview.pack(fill="both", expand=True, padx=20, pady=10)
 
         # ===== TAB 1: FIRMWARE UPDATE (BIN) =====
@@ -113,7 +130,10 @@ class SwUpdateApp(ctk.CTk):
         self._build_hex_tab(self.tab_hex)
 
         # ---------- Log area ----------
-        self.log_frame = ctk.CTkFrame(self, corner_radius=10)
+        self.log_frame = ctk.CTkFrame(
+            self, corner_radius=10,
+            border_width=BLOCK_BORDER_WIDTH, border_color=BLOCK_BORDER_COLOR,
+        )
         self.log_frame.pack(fill="both", expand=True, padx=20, pady=(5, 10))
 
         ctk.CTkLabel(
@@ -135,7 +155,10 @@ class SwUpdateApp(ctk.CTk):
 
     def _build_bin_tab(self, parent):
         # File selection frame
-        file_frame = ctk.CTkFrame(parent, corner_radius=8)
+        file_frame = ctk.CTkFrame(
+            parent, corner_radius=8,
+            border_width=BLOCK_BORDER_WIDTH, border_color=BLOCK_BORDER_COLOR,
+        )
         file_frame.pack(fill="x", padx=15, pady=10)
 
         ctk.CTkLabel(file_frame, text="BIN File:", font=ctk.CTkFont(size=14, weight="bold")).pack(
@@ -152,7 +175,10 @@ class SwUpdateApp(ctk.CTk):
         self.bin_browse_btn.pack(side="left", padx=5, pady=10)
 
         # Tool type selection frame
-        tool_frame = ctk.CTkFrame(parent, corner_radius=8)
+        tool_frame = ctk.CTkFrame(
+            parent, corner_radius=8,
+            border_width=BLOCK_BORDER_WIDTH, border_color=BLOCK_BORDER_COLOR,
+        )
         tool_frame.pack(fill="x", padx=15, pady=5)
 
         ctk.CTkLabel(tool_frame, text="Tool Type:", font=ctk.CTkFont(size=14, weight="bold")).pack(
@@ -176,14 +202,17 @@ class SwUpdateApp(ctk.CTk):
             text="UPDATE FIRMWARE",
             font=ctk.CTkFont(size=16, weight="bold"),
             height=45,
-            fg_color="#2E7D32",
-            hover_color="#1B5E20",
+            fg_color="#d01b2e",
+            hover_color="#b21424",
             command=self.start_bin_update,
         )
         self.update_btn.pack(fill="x", padx=15, pady=15)
 
         # Progress bar frame
-        progress_frame = ctk.CTkFrame(parent, corner_radius=8)
+        progress_frame = ctk.CTkFrame(
+            parent, corner_radius=8,
+            border_width=BLOCK_BORDER_WIDTH, border_color=BLOCK_BORDER_COLOR,
+        )
         progress_frame.pack(fill="x", padx=15, pady=(0, 10))
 
         self.progress_label = ctk.CTkLabel(
@@ -209,7 +238,10 @@ class SwUpdateApp(ctk.CTk):
 
     def _build_csv_tab(self, parent):
         # File selection frame
-        file_frame = ctk.CTkFrame(parent, corner_radius=8)
+        file_frame = ctk.CTkFrame(
+            parent, corner_radius=8,
+            border_width=BLOCK_BORDER_WIDTH, border_color=BLOCK_BORDER_COLOR,
+        )
         file_frame.pack(fill="x", padx=15, pady=10)
 
         ctk.CTkLabel(file_frame, text="CSV File:", font=ctk.CTkFont(size=14, weight="bold")).pack(
@@ -226,7 +258,10 @@ class SwUpdateApp(ctk.CTk):
         self.csv_browse_btn.pack(side="left", padx=5, pady=10)
 
         # Tool type selection frame
-        tool_frame = ctk.CTkFrame(parent, corner_radius=8)
+        tool_frame = ctk.CTkFrame(
+            parent, corner_radius=8,
+            border_width=BLOCK_BORDER_WIDTH, border_color=BLOCK_BORDER_COLOR,
+        )
         tool_frame.pack(fill="x", padx=15, pady=5)
 
         ctk.CTkLabel(tool_frame, text="Tool Type:", font=ctk.CTkFont(size=14, weight="bold")).pack(
@@ -247,14 +282,17 @@ class SwUpdateApp(ctk.CTk):
             text="SEND CSV COMMANDS",
             font=ctk.CTkFont(size=16, weight="bold"),
             height=45,
-            fg_color="#1565C0",
-            hover_color="#0D47A1",
+            fg_color="#d01b2e",
+            hover_color="#b21424",
             command=self.start_csv_send,
         )
         self.csv_send_btn.pack(fill="x", padx=15, pady=15)
 
         # Progress bar frame
-        csv_progress_frame = ctk.CTkFrame(parent, corner_radius=8)
+        csv_progress_frame = ctk.CTkFrame(
+            parent, corner_radius=8,
+            border_width=BLOCK_BORDER_WIDTH, border_color=BLOCK_BORDER_COLOR,
+        )
         csv_progress_frame.pack(fill="x", padx=15, pady=(0, 10))
 
         self.csv_progress_label = ctk.CTkLabel(
@@ -279,7 +317,10 @@ class SwUpdateApp(ctk.CTk):
 
     def _build_hex_tab(self, parent):
         # Hex input frame
-        hex_frame = ctk.CTkFrame(parent, corner_radius=8)
+        hex_frame = ctk.CTkFrame(
+            parent, corner_radius=8,
+            border_width=BLOCK_BORDER_WIDTH, border_color=BLOCK_BORDER_COLOR,
+        )
         hex_frame.pack(fill="x", padx=15, pady=10)
 
         ctk.CTkLabel(hex_frame, text="Hex String:", font=ctk.CTkFont(size=14, weight="bold")).pack(
@@ -295,11 +336,84 @@ class SwUpdateApp(ctk.CTk):
             text="SEND HEX",
             font=ctk.CTkFont(size=16, weight="bold"),
             height=45,
-            fg_color="#E65100",
-            hover_color="#BF360C",
+            fg_color="#d01b2e",
+            hover_color="#b21424",
             command=self.send_manual_hex,
         )
         self.hex_send_btn.pack(fill="x", padx=15, pady=15)
+
+        # ===== Command buttons frame =====
+        cmd_frame = ctk.CTkFrame(
+            parent, corner_radius=8,
+            border_width=BLOCK_BORDER_WIDTH, border_color=BLOCK_BORDER_COLOR,
+        )
+        cmd_frame.pack(fill="x", padx=15, pady=10)
+
+        ctk.CTkLabel(
+            cmd_frame, text="QUICK COMMANDS:", font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(anchor="w", padx=15, pady=(10, 5))
+
+        # Grid layout: 3 columns x 2 rows (wraps to 2 rows when window is small)
+        self.cmd_grid = ctk.CTkFrame(cmd_frame, fg_color="transparent")
+        self.cmd_grid.pack(fill="x", padx=10, pady=(0, 10))
+
+        # Configure grid columns to expand equally
+        for col in range(3):
+            self.cmd_grid.grid_columnconfigure(col, weight=1, uniform="cmd_btn")
+
+        # Button 1: Check FW version
+        self.cmd_fw_version_btn = ctk.CTkButton(
+            self.cmd_grid,
+            text="Check FW Version",
+            height=40,
+            command=lambda: self.send_quick_command("fw_version"),
+        )
+        self.cmd_fw_version_btn.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+
+        # Button 2: Check MPBID
+        self.cmd_mpbid_btn = ctk.CTkButton(
+            self.cmd_grid,
+            text="Check MPBID",
+            height=40,
+            command=lambda: self.send_quick_command("mpbid"),
+        )
+        self.cmd_mpbid_btn.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+
+        # Button 3: Check FW P/N
+        self.cmd_fw_pn_btn = ctk.CTkButton(
+            self.cmd_grid,
+            text="Check FW P/N",
+            height=40,
+            command=lambda: self.send_quick_command("fw_pn"),
+        )
+        self.cmd_fw_pn_btn.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
+
+        # Button 4: Read Data calibration
+        self.cmd_calibration_btn = ctk.CTkButton(
+            self.cmd_grid,
+            text="Read Data Calibration",
+            height=40,
+            command=lambda: self.send_quick_command("calibration"),
+        )
+        self.cmd_calibration_btn.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+
+        # Button 5: Target M18
+        self.cmd_target_m18_btn = ctk.CTkButton(
+            self.cmd_grid,
+            text="Target M18",
+            height=40,
+            command=lambda: self.send_quick_command("target_m18"),
+        )
+        self.cmd_target_m18_btn.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+
+        # Button 6: Target M12
+        self.cmd_target_m12_btn = ctk.CTkButton(
+            self.cmd_grid,
+            text="Target M12",
+            height=40,
+            command=lambda: self.send_quick_command("target_m12"),
+        )
+        self.cmd_target_m12_btn.grid(row=1, column=2, padx=5, pady=5, sticky="ew")
 
         # info_text = (
         #     "💡 Instructions:\n"
@@ -380,8 +494,8 @@ class SwUpdateApp(ctk.CTk):
 
         if self.comm.connect():
             self.connected = True
-            self.connect_btn.configure(text="🔌 Disconnect", fg_color="#C62828", hover_color="#B71C1C")
-            self.status_label.configure(text=f"● Connected: {port_name}", text_color="#66BB6A")
+            self.connect_btn.configure(text="🔌 Disconnect", fg_color="#d01b2e", hover_color="#b21424")
+            self.status_label.configure(text=f"● Connected: {port_name}", text_color="#2E7D32")
             self._log(f"Successfully connected to port {port_name}")
         else:
             self.comm = None
@@ -392,8 +506,8 @@ class SwUpdateApp(ctk.CTk):
             self.comm.disconnect()
             self.comm = None
         self.connected = False
-        self.connect_btn.configure(text="🔌 Connect", fg_color="#1F6AA5", hover_color="#144870")
-        self.status_label.configure(text="● Not connected", text_color="#FF6B6B")
+        self.connect_btn.configure(text="🔌 Connect", fg_color="#d01b2e", hover_color="#b21424")
+        self.status_label.configure(text="● Not connected", text_color="#d01b2e")
         self._log("🔌 Disconnected from COM port.")
 
     # ============================================================
@@ -629,6 +743,151 @@ class SwUpdateApp(ctk.CTk):
 
     def _reset_hex_btn(self):
         self.hex_send_btn.configure(state="normal", text="📤 SEND HEX")
+
+    # ============================================================
+    # QUICK COMMAND SENDING
+    # ============================================================
+    def send_quick_command(self, command_type: str):
+        """Send a quick command and display the result in a popup window."""
+        if not self.connected or not self.comm:
+            messagebox.showwarning("Warning", "Please connect to a COM port first!")
+            return
+
+        # Define the commands (full frames with checksum)
+        commands = {
+            "fw_version": "01 00 03 00 0D 04 00 15",
+            "mpbid": "01 00 03 00 04 05 00 0D",
+            "fw_pn": "01 00 03 00 09 04 00 11",
+            "calibration": "01 00 03 61 00 FA 01 5F",
+            "target_m18": "70 01 01 01 00 73",
+            "target_m12": "70 01 01 11 00 83",
+        }
+
+        if command_type not in commands:
+            return
+
+        full_cmd = commands[command_type]
+
+        # Disable all quick command buttons while running
+        self._set_quick_buttons_state("disabled")
+
+        self.worker_thread = threading.Thread(
+            target=self._quick_command_worker,
+            args=(command_type, full_cmd),
+            daemon=True,
+        )
+        self.worker_thread.start()
+
+    def _set_quick_buttons_state(self, state: str):
+        """Enable/disable all quick command buttons."""
+        for btn in [
+            self.cmd_fw_version_btn,
+            self.cmd_mpbid_btn,
+            self.cmd_fw_pn_btn,
+            self.cmd_calibration_btn,
+            self.cmd_target_m18_btn,
+            self.cmd_target_m12_btn,
+        ]:
+            btn.configure(state=state)
+
+    def _quick_command_worker(self, command_type: str, full_cmd: str):
+        """Worker thread: Send quick command and process response."""
+        try:
+            self._log(f"\n{'='*60}")
+            self._log(f"QUICK COMMAND: {command_type}")
+            self._log(f"{'='*60}")
+
+            rx = send_and_get_final_rx(self.comm, full_cmd, log_callback=self._log)
+
+            if rx is None:
+                self.after(0, lambda: self._show_result_window(
+                    command_type, "Timeout or no response from MCU!"
+                ))
+                return
+
+            first_byte = rx[0]
+
+            if first_byte in (0x80, 0x81):
+                # Show result
+                result = self._parse_response(command_type, rx)
+                self.after(0, lambda: self._show_result_window(command_type, result))
+            elif first_byte in (0x82, 0x83):
+                # Cannot get data
+                self.after(0, lambda: self._show_result_window(
+                    command_type, "Cannot get data"
+                ))
+            else:
+                self.after(0, lambda: self._show_result_window(
+                    command_type, f"Unexpected response: {rx.hex(' ').upper()}"
+                ))
+
+        except Exception as e:
+            self._log(f"Error during quick command: {e}")
+            self.after(0, lambda: self._show_result_window(command_type, f"Error: {e}"))
+        finally:
+            self.after(0, lambda: self._set_quick_buttons_state("normal"))
+
+    def _parse_response(self, command_type: str, rx: bytes) -> str:
+        """Parse the response data based on command type."""
+        # Frame format: Header(1) + Seq(1) + Len(1) + Data(len) + Checksum(2)
+        # Data starts at index 3, length is at index 2
+        if len(rx) >= 3:
+            data_len = rx[2]
+            data = rx[3:3 + data_len]
+        else:
+            data = rx[3:]
+
+        if command_type == "fw_pn":
+            # Remove all spaces and convert into decimal
+            hex_str = data.hex()
+            dec_value = int(hex_str, 16)
+            return f"FW P/N (Decimal): {dec_value}"
+        else:
+            return f"Data: {data.hex(' ').upper()}"
+
+    def _show_result_window(self, command_type: str, result: str):
+        """Display a small window with the data result."""
+        title_map = {
+            "fw_version": "Check FW Version",
+            "mpbid": "Check MPBID",
+            "fw_pn": "Check FW P/N",
+            "calibration": "Read Data Calibration",
+            "target_m18": "Target M18",
+            "target_m12": "Target M12",
+        }
+        title = title_map.get(command_type, command_type)
+
+        win = ctk.CTkToplevel(self)
+        win.title(title)
+        win.geometry("400x200")
+        win.resizable(False, False)
+
+        # Center the window
+        win.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() - 400) // 2
+        y = self.winfo_y() + (self.winfo_height() - 200) // 2
+        win.geometry(f"+{x}+{y}")
+
+        ctk.CTkLabel(
+            win,
+            text=title,
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).pack(pady=(20, 10))
+
+        ctk.CTkLabel(
+            win,
+            text=result,
+            font=ctk.CTkFont(size=14),
+            wraplength=350,
+            justify="center",
+        ).pack(pady=10, padx=20)
+
+        ctk.CTkButton(
+            win,
+            text="OK",
+            width=100,
+            command=win.destroy,
+        ).pack(pady=15)
 
     # ============================================================
     # TEMP FOLDER CLEANUP

@@ -110,6 +110,20 @@ class OpenLinkComm:
         except ValueError:
             return False
 
+    def send_no_wait(self, raw_bytes: bytes) -> bool:
+        """Send bytes without waiting for ACK response (used for multi-frame responses)."""
+        if not self.ser or not self.ser.is_open:
+            return False
+
+        frame = bytes(raw_bytes)
+
+        self.ser.write(frame)
+
+        if self.on_tx:
+            self.on_tx(frame)
+
+        return True
+
     def send_bytes(self, raw_bytes: bytes, timeout_ms: int = 10000) -> bool:
         if not self.ser or not self.ser.is_open:
             return False
