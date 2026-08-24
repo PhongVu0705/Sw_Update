@@ -40,6 +40,10 @@ TEMP_DIR = os.path.join(app_paths.writable_base(), "temp")
 # Disable devtools in packaged builds
 DEBUG_MODE = False
 
+# Force-close the PyInstaller boot splash after this many seconds even if
+# the main window never fires 'shown' (a stuck splash would block the UI).
+SPLASH_WATCHDOG_SECONDS = 20.0
+
 BAUD_RATE = 115200
 
 # Check FW version command: 01 00 03 00 0D 04 00 15
@@ -551,6 +555,25 @@ def cleanup_on_exit(api: "JSAPI"):
 
 
 # ----------------------------------------------------------------------
+# Boot splash (PyInstaller --splash icon/iconfw.png)
+# ----------------------------------------------------------------------
+def close_boot_splash():
+    """
+    Close the native PyInstaller splash screen.
+
+    ``pyi_splash`` is injected by PyInstaller only inside frozen builds,
+    so in development this is a silent no-op. It MUST be called once the
+    real window is visible - otherwise the splash stays on top forever.
+    """
+    try:
+        import pyi_splash  # provided by PyInstaller when --splash is used
+
+        pyi_splash.close()
+    except Exception:
+        pass
+
+
+# ----------------------------------------------------------------------
 # Application entry point
 # ----------------------------------------------------------------------
 def main():
@@ -567,6 +590,18 @@ def main():
     )
 
     api.set_window(window)
+
+    # Close the PyInstaller splash as soon as the main window is visible.
+    # A watchdog force-closes it if 'shown' never fires.
+    splash_watchdog = threading.Timer(SPLASH_WATCHDOG_SECONDS, close_boot_splash)
+    splash_watchdog.daemon = True
+
+    def _on_window_shown():
+        splash_watchdog.cancel()
+        close_boot_splash()
+
+    window.events.shown += _on_window_shown
+    splash_watchdog.start()
 
     # Run cleanup when the window is closed
     window.events.closed += lambda: cleanup_on_exit(api)

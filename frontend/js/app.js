@@ -14,7 +14,7 @@
       body:
         '<div class="modal-avatar">' +
         '<img class="avatar-image" src="img/images.jpg" alt="Avatar of Grey Le Phong Vu" />' +
-        '<span class="avatar-name">Grey Le Phong Vu</span>' +
+        '<span class="avatar-name">Create by Grey Le Phong Vu</span>' +
         "</div>" +
         "<p>The <strong>Software Update Tool</strong> simplifies firmware deployment and updates across target devices.</p>" +
         "<p>Version 1.0.0.</p>",
