@@ -46,7 +46,8 @@ def export_filtered_csv(
 def get_commands_from_csv(input_path: str, prefix: str = "74", log_callback=None) -> list:
     """
     Full processing function: Filter CSV -> Export Temp File -> Read command list.
-    Returns a list of Hex strings.
+    Checks for 74 commands with length=01 and data=10 or 13, adding DELAY:5000 after them.
+    Returns a list of Hex strings and DELAY tags.
     """
     commands = []
     try:
@@ -57,8 +58,21 @@ def get_commands_from_csv(input_path: str, prefix: str = "74", log_callback=None
         with open(filtered_csv_path, mode="r", encoding="utf-8") as f:
             for line in f:
                 cmd = line.strip()
-                if cmd:
-                    commands.append(cmd)
+                if not cmd:
+                    continue
+
+                commands.append(cmd)
+
+                # Split hex bytes: byte 1=Header, byte 2=SeqID, byte 3=Len, byte 4=Data
+                hex_parts = cmd.split()
+                if len(hex_parts) >= 4:
+                    header = hex_parts[0].upper()
+                    length = hex_parts[2].upper()
+                    data_byte = hex_parts[3].upper()
+
+                    # Check condition: Prefix 74 + Len 01 + Data (10 or 13)
+                    if header == "74" and length == "01" and data_byte in ("10", "13"):
+                        commands.append("DELAY:3000")
                     
     except Exception as e:
         _log(f"❌ Error during CSV file processing: {e}", log_callback)

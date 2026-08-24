@@ -32,7 +32,7 @@ ctk.set_default_color_theme(_theme_path)
 BAUD_RATE = 115200
 
 # Border style dùng chung cho các khối (frame) trong GUI - làm viền đậm hơn
-BLOCK_BORDER_WIDTH = 2
+BLOCK_BORDER_WIDTH = 1
 BLOCK_BORDER_COLOR = "#4a4a4a"
 
 
@@ -415,6 +415,15 @@ class SwUpdateApp(ctk.CTk):
         )
         self.cmd_target_m12_btn.grid(row=1, column=2, padx=5, pady=5, sticky="ew")
 
+        # Button 7: Send Default Metco Password
+        self.cmd_metco_password_btn = ctk.CTkButton(
+            self.cmd_grid,
+            text="Send Default Metco Password",
+            height=40,
+            command=lambda: self.send_quick_command("metco_password"),
+        )
+        self.cmd_metco_password_btn.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
+
         # info_text = (
         #     "💡 Instructions:\n"
         #     "1. Enter the Hex string to send (bytes separated by spaces)\n"
@@ -761,6 +770,7 @@ class SwUpdateApp(ctk.CTk):
             "calibration": "01 00 03 61 00 FA 01 5F",
             "target_m18": "70 01 01 01 00 73",
             "target_m12": "70 01 01 11 00 83",
+            "metco_password": "01 01 0A 00 3B 33 33 33 33 33 33 33 33 01 DF",
         }
 
         if command_type not in commands:
@@ -787,6 +797,7 @@ class SwUpdateApp(ctk.CTk):
             self.cmd_calibration_btn,
             self.cmd_target_m18_btn,
             self.cmd_target_m12_btn,
+            self.cmd_metco_password_btn,
         ]:
             btn.configure(state=state)
 
@@ -854,6 +865,7 @@ class SwUpdateApp(ctk.CTk):
             "calibration": "Read Data Calibration",
             "target_m18": "Target M18",
             "target_m12": "Target M12",
+            "metco_password": "Send Default Metco Password",
         }
         title = title_map.get(command_type, command_type)
 
@@ -867,6 +879,14 @@ class SwUpdateApp(ctk.CTk):
         x = self.winfo_x() + (self.winfo_width() - 400) // 2
         y = self.winfo_y() + (self.winfo_height() - 200) // 2
         win.geometry(f"+{x}+{y}")
+
+        # Always on top + modal (blocks interaction with the main window
+        # until this popup is closed)
+        win.attributes("-topmost", True)
+        win.lift()
+        win.focus_force()
+        win.transient(self)
+        win.grab_set()
 
         ctk.CTkLabel(
             win,

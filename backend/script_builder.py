@@ -1,7 +1,6 @@
 import os
 from hex_processor import process_pipeline
 
-
 def build_frame(hex_cmd_str: str) -> str:
     """
     Automatically calculate checksum:
@@ -88,7 +87,7 @@ def generate_and_save_bin_script(bin_path: str, tool_type: str = "M12", log_call
     
     script_commands = []
 
-    # 1. Target (No M12/M18 character)
+    # 1. Target
     cmd1 = "70 01 01 11" if tool_type == "M12" else "70 01 01 01"
     script_commands.append(build_frame(cmd1))
 
@@ -96,35 +95,47 @@ def generate_and_save_bin_script(bin_path: str, tool_type: str = "M12", log_call
     seq_id = seq.get_and_inc()
     script_commands.append(build_frame(f"01 {seq_id} 0A 00 3B 33 33 33 33 33 33 33 33"))
 
-    # 3. Get Params command
+    # 3. Lệnh trùng lặp theo yêu cầu quy trình
+    seq_id = seq.get_and_inc()
+    script_commands.append(build_frame(f"01 {seq_id} 0A 00 3B 33 33 33 33 33 33 33 33"))
+
+    # 4. Get Params command
     seq_id = seq.get_and_inc()
     script_commands.append(build_frame(f"74 {seq_id} 01 15"))
 
-    # 4. Command 74 <SeqID> 08 11 00 X4 ... (Placeholder, don't build frame at this step)
+    # 5. Dynamic Command 4: 74 <SeqID> 08 11 00 X5 X6 X1 X2 X3 X4 <checksum>
     seq_id = seq.get_and_inc()
     script_commands.append(f"DYNAMIC_CMD_4:{seq_id}")
 
-    # 5. Command 74 <SeqID> 08 11 X5 X6 ... (Placeholder, don't build frame at this step)
+    # 6. Dynamic Command 5: 74 <SeqID> 08 11 X7 X8 X9 X1 X2 X3 X4 <checksum>
     seq_id = seq.get_and_inc()
     script_commands.append(f"DYNAMIC_CMD_5:{seq_id}")
 
-    # 6. Target
+    # 7. Target
     seq_id = seq.get_and_inc()
-    cmd6 = f"70 {seq_id} 01 11" if tool_type == "M12" else f"70 {seq_id} 01 01"
-    script_commands.append(build_frame(cmd6))
+    cmd7 = f"70 {seq_id} 01 11" if tool_type == "M12" else f"70 {seq_id} 01 01"
+    script_commands.append(build_frame(cmd7))
 
-    # 7. Fixed command
-    script_commands.append("74 F5 01 10 01 7A")
-
-    # 8. Target
+    # 8. Lệnh 74 <SeqID> 01 10 <Checksum>
     seq_id = seq.get_and_inc()
-    cmd8 = f"70 {seq_id} 01 11" if tool_type == "M12" else f"70 {seq_id} 01 01"
-    script_commands.append(build_frame(cmd8))
+    script_commands.append(build_frame(f"74 {seq_id} 01 10"))
 
-    # 9. Fixed command
-    script_commands.append("74 FC 01 13 01 84")
+    # 8.1 Delay 3s
+    script_commands.append("DELAY:3000")
 
-    # 10. Packet set A
+    # 9. Target
+    seq_id = seq.get_and_inc()
+    cmd9 = f"70 {seq_id} 01 11" if tool_type == "M12" else f"70 {seq_id} 01 01"
+    script_commands.append(build_frame(cmd9))
+
+    # 10. Lệnh 74 <SeqID> 01 13 <Checksum>
+    seq_id = seq.get_and_inc()
+    script_commands.append(build_frame(f"74 {seq_id} 01 13"))
+
+    # 10.1 Delay 3s
+    script_commands.append("DELAY:3000")
+
+    # 11. Packet set A
     data_offset = 0
     for block_hex in hex_blocks:
         seq_id = seq.get_and_inc()
@@ -139,16 +150,13 @@ def generate_and_save_bin_script(bin_path: str, tool_type: str = "M12", log_call
         cmd_length = 1 + 3 + block_len
         len_str = f"{cmd_length:02X}"
 
-        # Split data string into individual bytes (separated by spaces)
         spaced_block_hex = " ".join(block_hex[i:i+2] for i in range(0, len(block_hex), 2))
-
-        # Build command string with spaced data
         payload_str = f"74 {seq_id} {len_str} 12 {d1} {d2} {d3} {spaced_block_hex}"
         script_commands.append(build_frame(payload_str))
 
         data_offset += block_len
 
-    # 11 & 12. End commands
+    # 12 & 13. End commands
     seq_id = seq.get_and_inc()
     script_commands.append(build_frame(f"74 {seq_id} 01 03"))
 

@@ -89,6 +89,13 @@ def execute_command_list(comm: OpenLinkComm, cmd_list: list, log_callback=None, 
     """Send commands sequentially from a prepared list (for CSV or single Hex)"""
     total = len(cmd_list)
     for idx, cmd in enumerate(cmd_list, start=1):
+        # Handle DELAY tag in command list
+        if cmd.startswith("DELAY:"):
+            delay_ms = int(cmd.split(":")[1])
+            _log(f"⏳ Delaying for {delay_ms / 1000.0}s...", log_callback)
+            time.sleep(delay_ms / 1000.0)
+            continue
+
         # Report progress (0.0 to 1.0)
         if progress_callback:
             progress_callback(idx / total, idx, total)
@@ -104,37 +111,42 @@ def execute_bin_flashing_sequence(comm: OpenLinkComm, script_data: dict, log_cal
     total_bytes = script_data["total_bytes"]
     total_commands = len(script_commands)
 
-    # Calculate X5 X6 from total bytes
+    # Calculate X7 X8 X9 from total_bytes (Convert total_bytes -> Little Endian 3 bytes)
     bytes_3le = total_bytes.to_bytes(3, byteorder='little')
-    x5 = f"{bytes_3le[0]:02X}"
-    x6 = f"{bytes_3le[1]:02X}"
+    x7 = f"{bytes_3le[0]:02X}"
+    x8 = f"{bytes_3le[1]:02X}"
+    x9 = f"{bytes_3le[2]:02X}"
 
     _log("\n🚀 Starting to send Update command sequence to Tool...", log_callback)
-    x1, x2, x3, x4 = None, None, None, None
+    x1, x2, x3, x4, x5, x6 = None, None, None, None, None, None
 
     for idx, cmd in enumerate(script_commands, start=1):
-        # Report progress (0.0 to 1.0)
+        # Handle DELAY command
+        if cmd.startswith("DELAY:"):
+            delay_ms = int(cmd.split(":")[1])
+            _log(f"⏳ Delaying for {delay_ms / 1000.0}s...", log_callback)
+            time.sleep(delay_ms / 1000.0)
+            continue
+
+        # Report progress
         if progress_callback:
             progress_callback(idx / total_commands, idx, total_commands)
-        
-        # 1. Handle DYNAMIC_CMD_4 (New structure: 00 X4 X1 X2 X3 00 00)
-        if cmd.startswith("DYNAMIC_CMD_4:"):
-            seq_id_4 = cmd.split(":")[1]
-            if not x4:
-                _log("❌ Missing X4 parameter to create step 4 command!", log_callback)
-                return False
-            
-            # New command: 74 <SeqID> 08 11 00 X4 X1 X2 X3 00 00
-            cmd = build_frame(f"74 {seq_id_4} 08 11 00 {x4} {x1} {x2} {x3} 00 00")
 
-        # 2. Handle DYNAMIC_CMD_5 (New structure: X5 X6 X1 X2 X3 00 00)
+        # 1. Dynamic Command 4: 74 <SeqID> 08 11 00 X5 X6 X1 X2 X3 X4 <checksum>
+        if cmd.startswith("DYNAMIC_CMD_4:"):
+            seq_id = cmd.split(":")[1]
+            if not all([x1, x2, x3, x4, x5, x6]):
+                _log("❌ Missing parameters X1..X6 for step 4 command!", log_callback)
+                return False
+            cmd = build_frame(f"74 {seq_id} 08 11 00 {x5} {x6} {x1} {x2} {x3} {x4}")
+
+        # 2. Dynamic Command 5: 74 <SeqID> 08 11 X7 X8 X9 X1 X2 X3 X4 <checksum>
         elif cmd.startswith("DYNAMIC_CMD_5:"):
             seq_id = cmd.split(":")[1]
-            if not x1:
-                _log("❌ Missing X1..X3 parameters to create step 5 command!", log_callback)
+            if not all([x1, x2, x3, x4]):
+                _log("❌ Missing parameters X1..X4 for step 5 command!", log_callback)
                 return False
-            # New command: 74 <SeqID> 08 11 X5 X6 X1 X2 X3 00 00
-            cmd = build_frame(f"74 {seq_id} 08 11 {x5} {x6} {x1} {x2} {x3} 00 00")
+            cmd = build_frame(f"74 {seq_id} 08 11 {x7} {x8} {x9} {x1} {x2} {x3} {x4}")
 
         # 3. Send the command
         rx_bytes = send_and_get_rx(comm, cmd, log_callback=log_callback)
@@ -142,16 +154,21 @@ def execute_bin_flashing_sequence(comm: OpenLinkComm, script_data: dict, log_cal
             _log(f"🛑 Failed at command {idx}/{len(script_commands)}", log_callback)
             return False
 
-        # 4. Extract Params if this is a "74 <SeqID> 01 15" command
-        if "01 15" in cmd and len(rx_bytes) >= 14: # Ensure minimum length (3 byte header + up to X4 position)
-            # Check if Header is 81, 83, or 85 (Header with payload)
+        # 4. Extract Params (X1, X2, X3, X4, X5, X6) if response to "74 <SeqID> 01 15"
+        # Data format after header (3 bytes): 01 X1 X2 X3 X4 00 00 00 00 00 X5 X6 01 00 00 00
+        if "01 15" in cmd and len(rx_bytes) >= 18:
             if rx_bytes[0] in (0x81, 0x83, 0x85):
-                # Skip first 3 bytes (Header, SeqID, Length), actual data starts at index 3
-                x1 = f"{rx_bytes[3]:02X}"
-                x2 = f"{rx_bytes[4]:02X}"
-                x3 = f"{rx_bytes[5]:02X}"
-                x4 = f"{rx_bytes[13]:02X}"
-                _log(f"🔑 [Response Extracted] X1={x1}, X2={x2}, X3={x3}, X4={x4}", log_callback)
+                # rx_bytes[0..2] là Header + SeqID + Length
+                # rx_bytes[3] = 01
+                x1 = f"{rx_bytes[4]:02X}"
+                x2 = f"{rx_bytes[5]:02X}"
+                x3 = f"{rx_bytes[6]:02X}"
+                x4 = f"{rx_bytes[7]:02X}"
+                # rx_bytes[8..12] = 00 00 00 00 00
+                x5 = f"{rx_bytes[13]:02X}"
+                x6 = f"{rx_bytes[14]:02X}"
+                
+                _log(f"🔑 [Extracted Params] X1={x1}, X2={x2}, X3={x3}, X4={x4}, X5={x5}, X6={x6}", log_callback)
             else:
                 _log(f"⚠️ Warning: Unexpected response header: {rx_bytes[0]:02X}", log_callback)
 
