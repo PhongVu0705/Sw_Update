@@ -1,4 +1,6 @@
 import os
+
+import app_paths
 from hex_processor import process_pipeline
 
 def build_frame(hex_cmd_str: str) -> str:
@@ -163,9 +165,8 @@ def generate_and_save_bin_script(bin_path: str, tool_type: str = "M12", log_call
     seq_id = seq.get_and_inc()
     script_commands.append(build_frame(f"74 {seq_id} 01 13"))
 
-    # Export command script to TXT file
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    temp_dir = os.path.join(script_dir, "temp")
+    # Export command script to TXT file (temp beside the .exe when frozen)
+    temp_dir = app_paths.temp_dir()
     base_name = os.path.splitext(os.path.basename(bin_path))[0]
     script_txt_path = os.path.join(temp_dir, f"{base_name}_script_commands.txt")
 

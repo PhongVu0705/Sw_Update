@@ -95,10 +95,10 @@ class OpenLinkComm:
         if self.ser and self.ser.is_open:
             self.ser.close()
 
-    def send_hex(self, raw_hex: str, timeout_ms: int = 5000) -> bool:
+    def send_hex(self, raw_hex: str, timeout_ms: int = 10000) -> bool:
         """
         Send Hex string to MCU.
-        :param timeout_ms: Time to wait for ACK response (default 5000ms = 5s).
+        :param timeout_ms: Time to wait for ACK response (default 10000ms = 10s).
         """
         clean_hex = "".join(raw_hex.strip().split())
         if not clean_hex or len(clean_hex) % 2 != 0:

@@ -22,8 +22,9 @@
 .screen-shell {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
   background-color: #f9fafb;
+  overflow: hidden;
 }
 
 /* ---------- Header ---------- */
@@ -108,6 +109,15 @@
   border: 1px solid rgba(255, 255, 255, 0.25);
 }
 
+.status-indicator.offline .status-dot {
+  background-color: #9ca3af;
+  box-shadow: none;
+}
+
+.status-indicator.offline .status-text {
+  color: rgba(255, 255, 255, 0.75);
+}
+
 .status-dot {
   width: 10px;
   height: 10px;
@@ -130,7 +140,9 @@
   gap: 24px;
   width: 100%;
   padding: 24px 32px;
-  flex: 1 0 auto;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .left-pane {
@@ -139,6 +151,8 @@
   gap: 24px;
   width: 400px;
   flex-shrink: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .right-pane {
@@ -146,6 +160,7 @@
   flex-direction: column;
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
 }
 
 /* ---------- Layout variants ---------- */
@@ -168,7 +183,7 @@
 }
 
 .main-body.stacked .terminal-zone {
-  min-height: 480px;
+  min-height: 240px;
 }
 
 /* ---------- Panels ---------- */
@@ -262,6 +277,53 @@
 }
 
 .connect-button:focus-visible {
+  outline: 3px solid #111827;
+  outline-offset: 2px;
+}
+
+/* ---------- Tool type selector ---------- */
+
+.tool-type-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tool-type-label {
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  color: #374151;
+}
+
+.tool-btn {
+  padding: 9px 24px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #374151;
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.tool-btn:hover {
+  border-color: #d01b2e;
+  color: #d01b2e;
+}
+
+.tool-btn.is-active {
+  background-color: #d01b2e;
+  border-color: #d01b2e;
+  color: #ffffff;
+}
+
+.tool-btn:focus-visible {
   outline: 3px solid #111827;
   outline-offset: 2px;
 }
@@ -444,19 +506,34 @@ button:disabled {
 }
 
 .stat-value {
+  display: inline-block;
+  margin: 10px 0 4px;
+  padding: 6px 18px;
+  border-radius: 999px;
   font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
-  font-size: 26px;
+  font-size: 15px;
   font-weight: 700;
-  color: #111827;
+  letter-spacing: 0.05em;
+  color: #374151;
+  background-color: #f3f4f6;
   font-variant-numeric: tabular-nums;
 }
 
 .stat-value.pass {
   color: #15803d;
+  background-color: #dcfce7;
 }
 
 .stat-value.fail {
   color: #b91c1c;
+  background-color: #fee2e2;
+}
+
+.stat-sub {
+  margin: 2px 0 0;
+  font-family: "Inter-Regular", Helvetica, Arial, sans-serif;
+  font-size: 11px;
+  color: #6b7280;
 }
 
 /* ---------- Command input (manual.html) ---------- */
@@ -514,7 +591,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-height: 420px;
+  min-height: 200px;
   background-color: #111827;
   border-radius: 12px;
   overflow: hidden;
@@ -595,6 +672,7 @@ button:disabled {
 
 .terminal-logs {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 16px;
   font-family:
@@ -784,6 +862,47 @@ button:disabled {
   outline-offset: 2px;
 }
 
+.modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background-color: transparent;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  color: #374151;
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.modal-copy:hover {
+  border-color: #d01b2e;
+  color: #d01b2e;
+}
+
+.modal-copy.copied {
+  border-color: #059669;
+  color: #059669;
+}
+
+.modal-copy:focus-visible {
+  outline: 2px solid #111827;
+  outline-offset: 2px;
+}
+
 .modal-body {
   padding: 24px;
   overflow-y: auto;
@@ -841,10 +960,12 @@ button:disabled {
 @media (max-width: 1024px) {
   .main-body {
     flex-direction: column;
+    overflow-y: auto;
   }
 
   .left-pane {
     width: 100%;
+    overflow-y: visible;
   }
 
   .main-body.halves .left-pane,

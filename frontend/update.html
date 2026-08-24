@@ -68,6 +68,26 @@
               </button>
             </div>
 
+            <div class="tool-type-row" role="radiogroup" aria-label="Tool type">
+              <span class="tool-type-label">Tool Type:</span>
+              <button
+                type="button"
+                class="tool-btn is-active"
+                data-tool="M12"
+                aria-pressed="true"
+              >
+                M12
+              </button>
+              <button
+                type="button"
+                class="tool-btn"
+                data-tool="M18"
+                aria-pressed="false"
+              >
+                M18
+              </button>
+            </div>
+
             <h2 class="section-title">Select Firmware File</h2>
 
             <div class="drop-zone" id="drop-zone">
@@ -80,13 +100,13 @@
                   >No file selected</span
                 >
                 <span class="file-meta" id="firmware-file-meta"
-                  >Drag & drop a .bin file here, or browse</span
+                  >Drag & drop a .bin or .csv file here, or browse</span
                 >
               </div>
               <input
                 id="firmware-file"
                 type="file"
-                accept=".bin,application/octet-stream"
+                accept=".bin,.csv,application/octet-stream,text/csv"
                 hidden
               />
               <label class="browse-button" for="firmware-file">
@@ -94,6 +114,19 @@
                 <span>Browse</span>
               </label>
             </div>
+
+            <h2 class="section-title">Fw version check</h2>
+            <label class="visually-hidden" for="expected-fw"
+              >Expected firmware version in decimal</label
+            >
+            <input
+              class="command-input"
+              id="expected-fw"
+              type="text"
+              placeholder="Expected FW version in decimal, e.g. 1.4.2"
+              autocomplete="off"
+              spellcheck="false"
+            />
 
             <div class="action-buttons" aria-label="Update controls">
               <button class="btn-start" type="submit" id="start-button">
@@ -124,8 +157,8 @@
                 <i class="bi bi-check-circle-fill"></i>
               </span>
               <div>
-                <p class="stat-label">DEVICES SUCCEEDED</p>
-                <strong class="stat-value pass" id="pass-count">142</strong>
+                <p class="stat-label">UPDATE RESULT</p>
+                <strong class="stat-value" id="update-result">—</strong>
               </div>
             </article>
             <article class="panel stat-card">
@@ -133,8 +166,9 @@
                 <i class="bi bi-x-circle-fill"></i>
               </span>
               <div>
-                <p class="stat-label">DEVICES FAILED</p>
-                <strong class="stat-value fail" id="fail-count">3</strong>
+                <p class="stat-label">FW VERSION CHECK</p>
+                <strong class="stat-value" id="fw-check-result">—</strong>
+                <p class="stat-sub" id="fw-detected">Detected: —</p>
               </div>
             </article>
           </section>
@@ -192,6 +226,7 @@
       </footer>
     </main>
 
+    <script src="js/bridge.js"></script>
     <script src="js/update.js"></script>
   </body>
 </html>

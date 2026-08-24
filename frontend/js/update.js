@@ -1,6 +1,9 @@
 /* ============================================================
-   Software Update Tool — Mass Update screen (update.html)
-   File selection, connection toggle, simulated deployment.
+   Software Update Tool — Mass Update screen (update.js)
+   Real mode  : talks to the Python backend through pywebview
+                (window.pywebview.api) + pushed events.
+   Simulation : falls back to a local demo when opened in a
+                plain browser without the backend.
    ============================================================ */
 
 (() => {
@@ -15,37 +18,48 @@
   const filePathLabel = $("firmware-file-label");
   const fileMeta = $("firmware-file-meta");
   const dropZone = $("drop-zone");
+  const browseLabel = dropZone.querySelector(".browse-button");
   const connectButton = $("connect-button");
   const comPort = $("com-port");
+  const toolButtons = Array.from(document.querySelectorAll(".tool-btn"));
+  const expectedFw = $("expected-fw");
   const startButton = $("start-button");
   const pauseButton = $("pause-button");
   const stopButton = $("stop-button");
   const clearLogsButton = $("clear-logs");
   const terminalLogs = $("terminal-logs");
-  const passCountEl = $("pass-count");
-  const failCountEl = $("fail-count");
+  const updateResultEl = $("update-result");
+  const fwCheckResultEl = $("fw-check-result");
+  const fwDetectedEl = $("fw-detected");
+  const statIcons = Array.from(
+    document.querySelectorAll(".status-cards-row .stat-icon"),
+  );
   const progressTrack = $("progress-track");
   const progressBarFill = $("progress-bar-fill");
   const progressPercentage = $("progress-percentage");
   const speedInfo = $("speed-info");
+  const statusIndicator = document.querySelector(
+    ".screen-header .status-indicator",
+  );
+  const statusText = statusIndicator.querySelector(".status-text");
 
   /* ---------- Constants & state ---------- */
 
-  const TOTAL_DEVICES = 145;
-  const FAILED_DEVICES = 3;
   const TICK_MS = 600;
 
-  let isConnected = false;
-  let timerId = null;
-  let progress = 0;
-  let succeeded = 0;
+  const state = {
+    connected: false,
+    file: null, // { path, name, size, ext } | browser File wrapper
+    toolType: "M12",
+    running: false,
+    paused: false,
+    // simulation-only state
+    timerId: null,
+    progress: 0,
+    simExpectedFw: "",
+  };
 
-  /* ---------- Helpers ---------- */
-
-  const formatFileSize = (bytes) =>
-    bytes < 1024 * 1024
-      ? `Size: ${(bytes / 1024).toFixed(1)} KB`
-      : `Size: ${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  /* ---------- Generic helpers ---------- */
 
   const timestamp = () => {
     const now = new Date();
@@ -55,195 +69,526 @@
     )}`;
   };
 
-  const log = (level, message) => {
+  const formatFileSize = (bytes) =>
+    bytes < 1024 * 1024
+      ? `${(bytes / 1024).toFixed(1)} KB`
+      : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+  function appendLog(level, message) {
     const line = document.createElement("p");
     line.className = `log-line log-${level}`;
-    line.textContent = `[${timestamp()}] ${level.toUpperCase()}: ${message}`;
+    line.textContent = `[${timestamp()}] ${message}`;
     terminalLogs.appendChild(line);
     terminalLogs.scrollTop = terminalLogs.scrollHeight;
-  };
+  }
 
-  const setProgress = (value) => {
-    progress = Math.min(100, Math.max(0, value));
-    progressBarFill.style.width = `${progress}%`;
-    progressPercentage.textContent = `${Math.round(progress)}%`;
-    progressTrack.setAttribute("aria-valuenow", String(Math.round(progress)));
+  function classifyLevel(message) {
+    if (/SUCCESS|PASS\b|verified/i.test(message)) return "success";
+    if (/ERROR|FAIL\b|Traceback|aborted|mismatch/i.test(message))
+      return "error";
+    if (/WARNING|WARN\b|TIMEOUT|no response/i.test(message)) return "warning";
+    if (/PROCESS|Flashing|block \d/i.test(message)) return "process";
+    return "info";
+  }
 
-    if (progress >= 100) {
-      speedInfo.textContent = "Update complete";
-    } else {
-      const remainingSeconds = Math.round(((100 - progress) / 100) * 60);
-      speedInfo.textContent = `Estimated Time Remaining: ~${remainingSeconds} seconds`;
-    }
-  };
+  function setProgress(value) {
+    const clamped = Math.min(100, Math.max(0, value));
+    progressBarFill.style.width = `${clamped}%`;
+    progressPercentage.textContent = `${Math.round(clamped)}%`;
+    progressTrack.setAttribute("aria-valuenow", String(Math.round(clamped)));
+  }
 
-  const setSelectedFile = (file) => {
-    if (!file) {
-      return;
-    }
+  function setConnectedUI(connected, port) {
+    state.connected = connected;
+    connectButton.classList.toggle("is-connected", connected);
+    connectButton.textContent = connected ? "Disconnect" : "Connect";
+    comPort.disabled = connected;
+    statusIndicator.classList.toggle("offline", !connected);
+    statusText.textContent = connected
+      ? port
+        ? `Connected: ${port}`
+        : "System Connected"
+      : "Not Connected";
+  }
+
+  function setFileInfo(file) {
+    state.file = file;
     filePathLabel.textContent = file.name;
-    fileMeta.textContent = formatFileSize(file.size);
-  };
+    fileMeta.textContent = `Size: ${formatFileSize(
+      file.size || 0,
+    )} · ${(file.ext || "").toUpperCase() || "FILE"}`;
+  }
 
-  /* ---------- File selection ---------- */
+  function resetResultCards() {
+    updateResultEl.textContent = "…";
+    updateResultEl.className = "stat-value";
+    fwCheckResultEl.textContent = "…";
+    fwCheckResultEl.className = "stat-value";
+    fwDetectedEl.textContent = "Detected: —";
+    if (statIcons[0]) statIcons[0].className = "stat-icon pass";
+    if (statIcons[1]) statIcons[1].className = "stat-icon fail";
+  }
 
-  fileInput.addEventListener("change", () =>
-    setSelectedFile(fileInput.files[0]),
-  );
+  function handleFinished(res) {
+    endRunUI();
 
-  ["dragenter", "dragover"].forEach((eventName) =>
-    dropZone.addEventListener(eventName, (event) => {
-      event.preventDefault();
-      dropZone.classList.add("dragover");
-    }),
-  );
+    const ok = res.status === "PASS";
+    const check = res.fwCheck || {};
 
-  ["dragleave", "drop"].forEach((eventName) =>
-    dropZone.addEventListener(eventName, (event) => {
-      event.preventDefault();
-      dropZone.classList.remove("dragover");
-    }),
-  );
-
-  dropZone.addEventListener("drop", (event) => {
-    const [file] = event.dataTransfer.files;
-    if (!file) {
-      return;
+    updateResultEl.textContent = ok ? "PASS" : "FAIL";
+    updateResultEl.className = `stat-value ${ok ? "pass" : "fail"}`;
+    if (statIcons[0]) {
+      statIcons[0].className = `stat-icon ${ok ? "pass" : "fail"}`;
     }
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
-    fileInput.files = transfer.files;
-    setSelectedFile(file);
-  });
 
-  /* ---------- Connection ---------- */
-
-  const setConnected = (value) => {
-    isConnected = value;
-    connectButton.classList.toggle("is-connected", value);
-    connectButton.textContent = value ? "Disconnect" : "Connect";
-    comPort.disabled = value;
-  };
-
-  connectButton.addEventListener("click", () => {
-    if (!isConnected && !comPort.value) {
-      log("warning", "Cannot connect: no COM port selected.");
-      comPort.focus();
-      return;
+    if (check.pass === true) {
+      fwCheckResultEl.textContent = "PASS";
+      fwCheckResultEl.className = "stat-value pass";
+      if (statIcons[1]) statIcons[1].className = "stat-icon pass";
+    } else if (check.pass === false) {
+      fwCheckResultEl.textContent = "FAIL";
+      fwCheckResultEl.className = "stat-value fail";
+      if (statIcons[1]) statIcons[1].className = "stat-icon fail";
+    } else {
+      fwCheckResultEl.textContent = "SKIPPED";
+      fwCheckResultEl.className = "stat-value";
     }
-    setConnected(!isConnected);
-    log(
-      isConnected ? "success" : "info",
-      isConnected
-        ? `Connected to device on ${comPort.value}`
-        : "Disconnected from device",
-    );
-  });
 
-  /* ---------- Deployment simulation ---------- */
+    fwDetectedEl.textContent = `Detected: ${
+      check.detected ?? "—"
+    }${check.expected ? ` · Expected: ${check.expected}` : ""}`;
 
-  const stopTimer = () => {
-    if (timerId !== null) {
-      clearInterval(timerId);
-      timerId = null;
+    setProgress(ok ? 100 : 0);
+
+    if (ok) {
+      appendLog("success", "=== UPDATE FINISHED: PASS ===");
+    } else {
+      appendLog(
+        "error",
+        `=== UPDATE FINISHED: FAIL — ${res.reason || "unknown"} ===`,
+      );
     }
-  };
+  }
 
-  const resetRunControls = () => {
-    stopTimer();
-    startButton.disabled = false;
-    pauseButton.disabled = true;
-    stopButton.disabled = true;
+  /* ---------- Run control UI ---------- */
+
+  function beginRun() {
+    state.running = true;
+    state.paused = false;
+    startButton.disabled = true;
+    pauseButton.disabled = false;
     pauseButton.textContent = "Pause";
     pauseButton.setAttribute("aria-pressed", "false");
-  };
+    stopButton.disabled = false;
+    resetResultCards();
+    setProgress(0);
+    speedInfo.textContent = "Preparing update...";
+  }
 
-  const tick = () => {
-    if (progress >= 100) {
-      return;
+  function endRunUI() {
+    state.running = false;
+    state.paused = false;
+    startButton.disabled = false;
+    pauseButton.disabled = true;
+    pauseButton.textContent = "Pause";
+    pauseButton.setAttribute("aria-pressed", "false");
+    stopButton.disabled = true;
+  }
+
+  /* ============================================================
+     Backend (pywebview) mode
+     ============================================================ */
+
+  async function refreshPorts() {
+    try {
+      const r = await Bridge.api.get_ports();
+      if (r.status !== "SUCCESS") {
+        appendLog(
+          "warning",
+          `Could not scan COM ports: ${r.message || "unknown error"}`,
+        );
+        return;
+      }
+      const ports = r.ports || [];
+      comPort.replaceChildren();
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      placeholder.textContent = ports.length
+        ? "Select COM Port..."
+        : "No COM ports found";
+      comPort.appendChild(placeholder);
+      ports.forEach((p) => {
+        const option = document.createElement("option");
+        option.value = p.port;
+        option.textContent = `${p.port} — ${p.description}`;
+        comPort.appendChild(option);
+      });
+      if (!ports.length) {
+        appendLog("warning", "No COM ports found on this system.");
+      }
+    } catch (err) {
+      appendLog("error", `COM port scan failed: ${err.message}`);
     }
+  }
 
-    setProgress(progress + 1 + Math.random() * 2);
-
-    // Grow the succeeded count roughly in step with progress.
-    const target = Math.round(
-      (progress / 100) * (TOTAL_DEVICES - FAILED_DEVICES),
-    );
-    if (target > succeeded) {
-      succeeded = target;
-      passCountEl.textContent = String(succeeded);
+  async function pickFileBackend() {
+    try {
+      const r = await Bridge.api.select_file();
+      if (r.status === "SUCCESS") {
+        setFileInfo(r);
+        appendLog("info", `Selected file: ${r.path}`);
+      } else if (r.status === "ERROR") {
+        appendLog("error", r.message || "File selection failed");
+      }
+    } catch (err) {
+      appendLog("error", `File dialog failed: ${err.message}`);
     }
+  }
 
-    if (Math.random() < 0.35) {
-      const block = Math.max(1, Math.round((progress / 100) * 64));
-      log(
-        "process",
-        `Flashing firmware block ${block}/64 to verified devices...`,
-      );
-    }
+  async function onStart() {
+    const fw = expectedFw.value.trim();
 
-    if (progress >= 100) {
-      passCountEl.textContent = String(TOTAL_DEVICES - FAILED_DEVICES);
-      resetRunControls();
-      log(
-        "success",
-        `Deployment complete: ${TOTAL_DEVICES - FAILED_DEVICES} succeeded, ${FAILED_DEVICES} failed.`,
-      );
-    }
-  };
-
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-
-    if (!isConnected) {
-      log("warning", "Cannot start: no device connected.");
-      comPort.focus();
-      return;
-    }
-
-    if (!fileInput.files.length) {
-      log("warning", "Cannot start: no firmware file selected.");
+    if (!state.file) {
+      appendLog("warning", "Cannot start: no .bin / .csv file selected.");
       dropZone.scrollIntoView({ behavior: "smooth", block: "nearest" });
       return;
     }
-
-    succeeded = 0;
-    passCountEl.textContent = "0";
-    failCountEl.textContent = String(FAILED_DEVICES);
-    setProgress(0);
-
-    startButton.disabled = true;
-    pauseButton.disabled = false;
-    stopButton.disabled = false;
-
-    log(
-      "info",
-      `Starting firmware deployment to ${TOTAL_DEVICES} devices via ${comPort.value}...`,
-    );
-    timerId = setInterval(tick, TICK_MS);
-  });
-
-  pauseButton.addEventListener("click", () => {
-    const resuming = pauseButton.textContent.trim() === "Resume";
-    pauseButton.textContent = resuming ? "Pause" : "Resume";
-    pauseButton.setAttribute("aria-pressed", String(!resuming));
-
-    if (resuming) {
-      timerId = setInterval(tick, TICK_MS);
-      log("info", "Deployment resumed.");
-    } else {
-      stopTimer();
-      log("warning", "Deployment paused by operator.");
+    if (fw && !/^\d+(\.\d+){0,3}$/.test(fw)) {
+      appendLog(
+        "warning",
+        "Invalid FW version format — use decimal numbers separated by dots, e.g. 1.4.2",
+      );
+      expectedFw.focus();
+      return;
     }
-  });
+    if (!state.connected) {
+      appendLog("warning", "Cannot start: no device connected.");
+      comPort.focus();
+      return;
+    }
 
-  stopButton.addEventListener("click", () => {
-    resetRunControls();
+    beginRun();
+
+    try {
+      const r = await Bridge.api.run_update(
+        state.file.path,
+        state.toolType,
+        fw,
+      );
+      if (r.status === "ERROR") {
+        appendLog("error", r.message || "Failed to start update");
+        endRunUI();
+      }
+      // Completion arrives asynchronously via onUpdateFinished.
+    } catch (err) {
+      appendLog("error", `Update failed to start: ${err.message}`);
+      endRunUI();
+    }
+  }
+
+  /* ============================================================
+     Simulation mode (plain browser fallback)
+     ============================================================ */
+
+  function stopTimer() {
+    if (state.timerId !== null) {
+      clearInterval(state.timerId);
+      state.timerId = null;
+    }
+  }
+
+  function simulateTick() {
+    if (state.progress >= 100) return;
+
+    setProgress(state.progress + 1 + Math.random() * 2);
+
+    const remainingSeconds = Math.round(((100 - state.progress) / 100) * 60);
+    speedInfo.textContent =
+      state.progress >= 100
+        ? "Update complete"
+        : `Estimated Time Remaining: ~${remainingSeconds} seconds`;
+
+    if (Math.random() < 0.35) {
+      const block = Math.max(1, Math.round((state.progress / 100) * 64));
+      appendLog(
+        "process",
+        `[SIM] Flashing firmware block ${block}/64 to verified devices...`,
+      );
+    }
+
+    if (state.progress >= 100) {
+      stopTimer();
+      finishSimulation();
+    }
+  }
+
+  function simulateFwCheck(expected) {
+    if (!expected) return null;
+    const segments = expected.split(".").map(Number);
+    const mismatch = Math.random() < 0.25;
+    if (mismatch) {
+      segments[segments.length - 1] += 1;
+    }
+    return {
+      detected: `${segments.join(".")}.0`,
+      pass: !mismatch,
+    };
+  }
+
+  function finishSimulation() {
+    const check = simulateFwCheck(state.simExpectedFw);
+    let status = "PASS";
+    let reason = "";
+
+    if (check && check.pass === false) {
+      status = "FAIL";
+      reason = "FW version mismatch (simulated)";
+    }
+
+    handleFinished({
+      status,
+      reason,
+      fwCheck: check
+        ? {
+            pass: check.pass,
+            detected: check.detected,
+            expected: state.simExpectedFw || null,
+          }
+        : null,
+    });
+  }
+
+  function simulateRun(expectedFwValue) {
+    state.simExpectedFw = expectedFwValue;
+    state.progress = 0;
     setProgress(0);
-    log("error", "Deployment aborted by operator.");
+    appendLog(
+      "info",
+      `[SIM] Starting simulated update of ${state.file.name} (${state.toolType})...`,
+    );
+    state.timerId = setInterval(simulateTick, TICK_MS);
+  }
+
+  /* ============================================================
+     Event wiring
+     ============================================================ */
+
+  // ---- Events pushed from Python (registered up-front) ----
+
+  Bridge.on("onLogFromPy", (message) => {
+    const msg = String(message);
+    appendLog(classifyLevel(msg), msg);
   });
 
-  clearLogsButton.addEventListener("click", () => {
-    terminalLogs.replaceChildren();
+  Bridge.on("onProgressFromPy", (percent, current, total) => {
+    setProgress(percent);
+    speedInfo.textContent =
+      current != null && total != null
+        ? `${current}/${total} commands`
+        : "Working...";
   });
+
+  Bridge.on("onUpdateFinished", (res) => handleFinished(res || {}));
+
+  Bridge.on("onConnectionState", (st) =>
+    setConnectedUI(!!(st && st.connected), st ? st.port : null),
+  );
+
+  // ---- Static DOM events ----
+
+  function wireStaticEvents() {
+    // Connection
+    connectButton.addEventListener("click", async () => {
+      if (Bridge.available) {
+        connectButton.disabled = true;
+        try {
+          if (!state.connected) {
+            if (!comPort.value) {
+              appendLog("warning", "Cannot connect: no COM port selected.");
+              comPort.focus();
+              return;
+            }
+            const r = await Bridge.api.connect_port(comPort.value);
+            if (r.status !== "SUCCESS") {
+              appendLog("error", r.message || "Connection failed");
+            }
+          } else {
+            await Bridge.api.disconnect_port();
+          }
+        } catch (err) {
+          appendLog("error", `Connection error: ${err.message}`);
+        } finally {
+          connectButton.disabled = false;
+        }
+      } else {
+        // Simulation toggle
+        if (!state.connected && !comPort.value) {
+          appendLog("warning", "Cannot connect: no COM port selected.");
+          comPort.focus();
+          return;
+        }
+        const port = comPort.value || "COM3 (simulated)";
+        setConnectedUI(!state.connected, port);
+        appendLog(
+          state.connected ? "success" : "info",
+          state.connected
+            ? `[SIM] Connected to device on ${port}`
+            : "[SIM] Disconnected from device",
+        );
+      }
+    });
+
+    // Tool type selector
+    toolButtons.forEach((button) =>
+      button.addEventListener("click", () => {
+        toolButtons.forEach((b) => {
+          const active = b === button;
+          b.classList.toggle("is-active", active);
+          b.setAttribute("aria-pressed", String(active));
+        });
+        state.toolType = button.dataset.tool;
+      }),
+    );
+
+    // Browse: use the native OS dialog when the backend is available
+    browseLabel.addEventListener("click", (event) => {
+      if (Bridge.available) {
+        event.preventDefault();
+        pickFileBackend();
+      }
+    });
+
+    // Hidden input (browser / simulation mode only)
+    fileInput.addEventListener("change", () => {
+      if (Bridge.available) return;
+      const file = fileInput.files[0];
+      if (!file) return;
+      const ext = file.name.split(".").pop().toLowerCase();
+      setFileInfo({ path: null, name: file.name, size: file.size, ext });
+    });
+
+    // Drag & drop
+    ["dragenter", "dragover"].forEach((eventName) =>
+      dropZone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        dropZone.classList.add("dragover");
+      }),
+    );
+    ["dragleave", "drop"].forEach((eventName) =>
+      dropZone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        dropZone.classList.remove("dragover");
+      }),
+    );
+    dropZone.addEventListener("drop", (event) => {
+      if (Bridge.available) {
+        appendLog(
+          "info",
+          "Drag & drop can't provide the file path inside the desktop app — please use the Browse button.",
+        );
+        return;
+      }
+      const [file] = event.dataTransfer.files;
+      if (!file) return;
+      const ext = file.name.split(".").pop().toLowerCase();
+      setFileInfo({ path: null, name: file.name, size: file.size, ext });
+    });
+
+    // Start
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      onStart();
+    });
+
+    // Pause / Resume
+    pauseButton.addEventListener("click", async () => {
+      if (!state.running) return;
+
+      if (Bridge.available) {
+        pauseButton.disabled = true;
+        try {
+          if (!state.paused) {
+            await Bridge.api.pause_update();
+            state.paused = true;
+            pauseButton.textContent = "Resume";
+            pauseButton.setAttribute("aria-pressed", "true");
+          } else {
+            await Bridge.api.resume_update();
+            state.paused = false;
+            pauseButton.textContent = "Pause";
+            pauseButton.setAttribute("aria-pressed", "false");
+          }
+        } catch (err) {
+          appendLog("error", `Pause/resume failed: ${err.message}`);
+        } finally {
+          pauseButton.disabled = false;
+        }
+      } else {
+        const resuming = pauseButton.textContent.trim() === "Resume";
+        pauseButton.textContent = resuming ? "Pause" : "Resume";
+        pauseButton.setAttribute("aria-pressed", String(!resuming));
+        if (resuming) {
+          state.timerId = setInterval(simulateTick, TICK_MS);
+          appendLog("info", "[SIM] Deployment resumed.");
+        } else {
+          stopTimer();
+          appendLog("warning", "[SIM] Deployment paused by operator.");
+        }
+      }
+    });
+
+    // Stop
+    stopButton.addEventListener("click", async () => {
+      if (!state.running) return;
+
+      if (Bridge.available) {
+        stopButton.disabled = true;
+        try {
+          await Bridge.api.stop_update();
+          // Final FAIL result arrives via onUpdateFinished.
+        } catch (err) {
+          appendLog("error", `Stop failed: ${err.message}`);
+          stopButton.disabled = false;
+        }
+      } else {
+        stopTimer();
+        appendLog("error", "[SIM] Deployment aborted by operator.");
+        handleFinished({
+          status: "FAIL",
+          reason: "Aborted by operator",
+          fwCheck: null,
+        });
+      }
+    });
+
+    // Clear logs
+    clearLogsButton.addEventListener("click", () => {
+      terminalLogs.replaceChildren();
+    });
+  }
+
+  /* ---------- Boot ---------- */
+
+  (async function boot() {
+    wireStaticEvents();
+
+    const live = await Bridge.init();
+    if (live) {
+      await refreshPorts();
+      try {
+        const st = await Bridge.api.get_connection_state();
+        setConnectedUI(!!st.connected, st.port);
+      } catch (err) {
+        appendLog("error", `Could not read connection state: ${err.message}`);
+      }
+    } else {
+      appendLog(
+        "warning",
+        "Running in SIMULATION mode — no Python backend detected.",
+      );
+      setConnectedUI(false, null);
+    }
+  })();
 })();

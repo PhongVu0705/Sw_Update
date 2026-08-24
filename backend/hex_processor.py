@@ -1,4 +1,6 @@
 import os
+
+import app_paths
 from intelhex import IntelHex
 
 def convert_bin_to_hex_temp(bin_path, output_dir, base_address=0x08000000):
@@ -67,11 +69,8 @@ def process_pipeline(bin_path, base_address=0x08000000, block_size=246, log_call
         _log(f"\n[ERROR] File not found: {bin_path}", log_callback)
         return None
 
-    # Determine 'temp' directory at script level
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    temp_dir = os.path.join(script_dir, "temp")
-    if not os.path.exists(temp_dir):
-        os.makedirs(temp_dir, exist_ok=True)
+    # 'temp' directory: beside the .exe when frozen, backend/ in dev
+    temp_dir = app_paths.temp_dir()
 
     # 1. Convert .bin to temporary .hex file
     hex_temp_path = convert_bin_to_hex_temp(bin_path, temp_dir, base_address)

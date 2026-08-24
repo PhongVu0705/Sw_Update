@@ -31,7 +31,7 @@ def _log(message: str, log_callback=None):
     else:
         print(message)
 
-def send_and_get_rx(comm: OpenLinkComm, hex_cmd: str, timeout_ms=5000, log_callback=None) -> bytes:
+def send_and_get_rx(comm: OpenLinkComm, hex_cmd: str, timeout_ms=10000, log_callback=None) -> bytes:
     """Send command and wait for response from MCU"""
     global last_rx_frame
     last_rx_frame = None
@@ -48,7 +48,7 @@ def send_and_get_rx(comm: OpenLinkComm, hex_cmd: str, timeout_ms=5000, log_callb
     return last_rx_frame
 
 
-def send_and_get_final_rx(comm: OpenLinkComm, hex_cmd: str, timeout_ms=5000, log_callback=None) -> bytes:
+def send_and_get_final_rx(comm: OpenLinkComm, hex_cmd: str, timeout_ms=10000, log_callback=None) -> bytes:
     """
     Send command and wait for the final response from MCU.
     - 0x85: keep waiting (multi-frame response)
@@ -92,7 +92,7 @@ def execute_command_list(comm: OpenLinkComm, cmd_list: list, log_callback=None, 
         # Handle DELAY tag in command list
         if cmd.startswith("DELAY:"):
             delay_ms = int(cmd.split(":")[1])
-            _log(f"⏳ Delaying for {delay_ms / 1000.0}s...", log_callback)
+            _log(f"Delaying for {delay_ms / 1000.0}s...", log_callback)
             time.sleep(delay_ms / 1000.0)
             continue
 
@@ -117,14 +117,14 @@ def execute_bin_flashing_sequence(comm: OpenLinkComm, script_data: dict, log_cal
     x8 = f"{bytes_3le[1]:02X}"
     x9 = f"{bytes_3le[2]:02X}"
 
-    _log("\n🚀 Starting to send Update command sequence to Tool...", log_callback)
+    _log("\nStarting to send Update command sequence to Tool...", log_callback)
     x1, x2, x3, x4, x5, x6 = None, None, None, None, None, None
 
     for idx, cmd in enumerate(script_commands, start=1):
         # Handle DELAY command
         if cmd.startswith("DELAY:"):
             delay_ms = int(cmd.split(":")[1])
-            _log(f"⏳ Delaying for {delay_ms / 1000.0}s...", log_callback)
+            _log(f"Delaying for {delay_ms / 1000.0}s...", log_callback)
             time.sleep(delay_ms / 1000.0)
             continue
 
@@ -136,7 +136,7 @@ def execute_bin_flashing_sequence(comm: OpenLinkComm, script_data: dict, log_cal
         if cmd.startswith("DYNAMIC_CMD_4:"):
             seq_id = cmd.split(":")[1]
             if not all([x1, x2, x3, x4, x5, x6]):
-                _log("❌ Missing parameters X1..X6 for step 4 command!", log_callback)
+                _log("Missing parameters X1..X6 for step 4 command!", log_callback)
                 return False
             cmd = build_frame(f"74 {seq_id} 08 11 00 {x5} {x6} {x1} {x2} {x3} {x4}")
 
@@ -144,14 +144,14 @@ def execute_bin_flashing_sequence(comm: OpenLinkComm, script_data: dict, log_cal
         elif cmd.startswith("DYNAMIC_CMD_5:"):
             seq_id = cmd.split(":")[1]
             if not all([x1, x2, x3, x4]):
-                _log("❌ Missing parameters X1..X4 for step 5 command!", log_callback)
+                _log("Missing parameters X1..X4 for step 5 command!", log_callback)
                 return False
             cmd = build_frame(f"74 {seq_id} 08 11 {x7} {x8} {x9} {x1} {x2} {x3} {x4}")
 
         # 3. Send the command
         rx_bytes = send_and_get_rx(comm, cmd, log_callback=log_callback)
         if rx_bytes is None:
-            _log(f"🛑 Failed at command {idx}/{len(script_commands)}", log_callback)
+            _log(f"Failed at command {idx}/{len(script_commands)}", log_callback)
             return False
 
         # 4. Extract Params (X1, X2, X3, X4, X5, X6) if response to "74 <SeqID> 01 15"
@@ -168,9 +168,9 @@ def execute_bin_flashing_sequence(comm: OpenLinkComm, script_data: dict, log_cal
                 x5 = f"{rx_bytes[13]:02X}"
                 x6 = f"{rx_bytes[14]:02X}"
                 
-                _log(f"🔑 [Extracted Params] X1={x1}, X2={x2}, X3={x3}, X4={x4}, X5={x5}, X6={x6}", log_callback)
+                _log(f"[Extracted Params] X1={x1}, X2={x2}, X3={x3}, X4={x4}, X5={x5}, X6={x6}", log_callback)
             else:
-                _log(f"⚠️ Warning: Unexpected response header: {rx_bytes[0]:02X}", log_callback)
+                _log(f"Warning: Unexpected response header: {rx_bytes[0]:02X}", log_callback)
 
     _log("\n🎉 === FIRMWARE UPDATE PROCESS COMPLETED SUCCESSFULLY ===", log_callback)
     return True

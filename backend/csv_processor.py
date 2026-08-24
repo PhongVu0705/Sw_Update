@@ -1,4 +1,6 @@
 import os
+
+import app_paths
 import pandas as pd
 
 def _log(message: str, log_callback=None):
@@ -16,10 +18,8 @@ def export_filtered_csv(
     """Filter data and automatically export to a new CSV file in the 'temp' directory."""
     input_path = input_path.strip("\"'")
 
-    # 1. Determine root directory and create 'temp' directory if not exists
-    root_dir = os.path.dirname(os.path.abspath(__file__))
-    temp_dir = os.path.join(root_dir, "temp")
-    os.makedirs(temp_dir, exist_ok=True)
+    # 1. Resolve 'temp' directory (beside the .exe when frozen) and create it
+    temp_dir = app_paths.temp_dir()
 
     # 2. Automatically get original file name to name the output file
     base_filename = os.path.basename(input_path)
