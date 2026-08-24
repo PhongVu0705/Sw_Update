@@ -1,133 +1,210 @@
 import os
-import shutil
-from opelink_comm import OpenLinkComm, select_port
-from csv_processor import get_commands_from_csv
+import sys
+import threading
+import queue
+import webview
+
+# Import các module backend hiện có
+from opelink_comm import list_ports, OpenLinkComm
 from command_runner import (
-    on_rx_callback, 
-    on_tx_callback, 
-    print_queued_messages,
-    execute_command_list, 
-    execute_bin_flashing_sequence
+    execute_command_list,
+    execute_bin_flashing_sequence,
+    on_rx_callback,
+    on_tx_callback,
 )
-from script_builder import generate_and_save_bin_script, SeqIdTracker, build_frame
+from script_builder import generate_and_save_bin_script
+from csv_processor import get_commands_from_csv
 
-def main():
-    selected_port = select_port()
-    if not selected_port:
-        print("No COM port selected. Stopping program.")
-        return
 
-    port_name = selected_port["port"]
-    comm = OpenLinkComm(
-        port=port_name,
-        baud_rate=115200,
-        on_rx=on_rx_callback,
-        on_tx=on_tx_callback,
-    )
+class JSAPI:
+    def __init__(self):
+        self.comm: OpenLinkComm = None
+        self._window = None
+        self.is_connected = False
+        self.worker_thread = None
 
-    if not comm.connect():
-        print(f"Unable to connect to port: {port_name}!")
-        return
+    def set_window(self, window):
+        """Gán instance window của pywebview để gọi callback JS khi cần."""
+        self._window = window
 
-    print(f"\n✅ Successfully connected to port {port_name}")
+    # ------------------------------------------------------------------
+    # Helper Logging & Progress Callbacks
+    # ------------------------------------------------------------------
+    def log(self, message: str):
+        """Gửi log tin nhắn về React Frontend."""
+        print(message)  # Vẫn print ra terminal nếu cần debug
+        if self._window:
+            # Gọi hàm window.onLogFromPy(msg) phía React
+            self._window.evaluate_js(f"window.onLogFromPy && window.onLogFromPy({repr(message)});")
 
-    try:
-        while True:
-            print_queued_messages()
-            print("\n================ SELECT FUNCTION ================")
-            print("1. Load .BIN file to flash Firmware (Generate TXT Script -> Auto Update)")
-            print("2. Load .CSV command file to send commands")
-            print("3. Enter Hex string manually")
-            print("q. Exit program")
-            
-            choice = input("\n[CHOICE] > ").strip().strip("\"'")
+    def report_progress(self, ratio: float, current: int, total: int):
+        """Gửi tiến độ công việc về React Frontend."""
+        if self._window:
+            percent = round(ratio * 100, 2)
+            self._window.evaluate_js(
+                f"window.onProgressFromPy && window.onProgressFromPy({percent}, {current}, {total});"
+            )
 
-            if choice.lower() in ["q", "exit"]:
-                print("Exiting...")
-                break
+    # ------------------------------------------------------------------
+    # API Methods (React frontend gọi qua window.pywebview.api)
+    # ------------------------------------------------------------------
+    def get_ports(self):
+        """Lấy danh sách các cổng COM khả dụng."""
+        try:
+            return {"status": "SUCCESS", "ports": list_ports()}
+        except Exception as e:
+            return {"status": "ERROR", "message": str(e)}
 
-            # OPTION 1: LOAD FROM BIN FILE
-            if choice == "1" or choice.lower().endswith(".bin"):
-                bin_path = choice if choice.lower().endswith(".bin") else input("👉 Enter .BIN file path: ").strip().strip("\"'")
-                if not os.path.exists(bin_path):
-                    print(f"❌ File does not exist: {bin_path}")
-                    continue
+    def connect_port(self, port: str, baud_rate: int = 115200):
+        """Kết nối tới cổng COM."""
+        if self.is_connected and self.comm:
+            self.disconnect_port()
 
-                tool_choice = input("👉 Select Tool (M12/M18) [Default: M12]: ").strip().upper()
-                tool_type = "M18" if tool_choice == "M18" else "M12"
+        # Đăng ký callback RX/TX để đẩy log ra giao diện
+        def _rx_cb(frame: bytes):
+            self.log(f"[MCU RX]: {frame.hex(' ').upper()}")
 
-                # Generate command script using script_builder
-                script_data = generate_and_save_bin_script(bin_path, tool_type=tool_type)
+        def _tx_cb(frame: bytes):
+            self.log(f"[TX  ->]: {frame.hex(' ').upper()}")
 
-                if script_data:
-                    # Run flashing sequence (auto update, no confirmation needed)
-                    execute_bin_flashing_sequence(comm, script_data)
+        self.comm = OpenLinkComm(
+            port=port,
+            baud_rate=int(baud_rate),
+            on_rx=_rx_cb,
+            on_tx=_tx_cb
+        )
 
-            # OPTION 2: LOAD FROM CSV FILE
-            elif choice == "2" or choice.lower().endswith(".csv"):
-                csv_path = choice if choice.lower().endswith(".csv") else input("👉 Enter .CSV file path: ").strip().strip("\"'")
-                if not os.path.exists(csv_path):
-                    print(f"❌ File does not exist: {csv_path}")
-                    continue
+        if self.comm.connect():
+            self.is_connected = True
+            self.log(f"✅ Connected to {port} at {baud_rate} baud.")
+            return {"status": "SUCCESS", "message": f"Connected to {port}"}
+        else:
+            self.comm = None
+            self.is_connected = False
+            self.log(f"❌ Failed to connect to {port}")
+            return {"status": "ERROR", "message": f"Failed to connect to {port}"}
 
-                # Ask user to select Tool to determine Target command
-                tool_choice = input("👉 Select Tool (M12/M18) [Default: M12]: ").strip().upper()
-                tool_type = "M18" if tool_choice == "M18" else "M12"
+    def disconnect_port(self):
+        """Ngắt kết nối cổng COM."""
+        if self.comm:
+            self.comm.disconnect()
+            self.comm = None
+        self.is_connected = False
+        self.log("🔌 Disconnected from port.")
+        return {"status": "SUCCESS"}
 
-                print(f"\n🔄 Processing CSV data filter from: {csv_path}...")
-                
-                # Call full processing function from csv_processor
-                csv_cmds = get_commands_from_csv(csv_path, prefix="74")
+    def run_hex_command(self, hex_cmd: str):
+        """Gửi một câu lệnh Hex đơn lẻ."""
+        if not self.is_connected or not self.comm:
+            return {"status": "ERROR", "message": "Serial port not connected"}
 
-                if not csv_cmds:
-                    print("⚠️ No matching commands found or file is empty!")
-                    continue
-
-                # --- ADD 2 INIT COMMANDS BEFORE SENDING CSV ---
-                init_cmds = []
-                
-                # Command 1: Target
-                cmd1_base = "70 01 01 11" if tool_type == "M12" else "70 01 01 01"
-                init_cmds.append(build_frame(cmd1_base))
-
-                # Command 2: Metcopassword (Use SeqIdTracker starting at 05 because command 1 used 01)
-                seq = SeqIdTracker(start=5)
-                seq_id = seq.get_and_inc()
-                cmd2_base = f"01 {seq_id} 0A 00 3B 33 33 33 33 33 33 33 33"
-                init_cmds.append(build_frame(cmd2_base))
-
-                # Combine 2 init commands before the CSV command list
-                full_cmds = init_cmds + csv_cmds
-
-                print(f"🚀 Sending {len(full_cmds)} commands (2 init + {len(csv_cmds)} CSV commands)...")
-                
-                # Run the full command list
-                execute_command_list(comm, full_cmds)
-
-            # OPTION 3: ENTER SINGLE HEX COMMAND
+        def _task():
+            self.log(f"\n--- Running Hex Command: {hex_cmd} ---")
+            success = execute_command_list(
+                self.comm,
+                [hex_cmd],
+                log_callback=self.log,
+                progress_callback=self.report_progress
+            )
+            if success:
+                self.log("✅ Command executed successfully.")
             else:
-                execute_command_list(comm, [choice])
+                self.log("❌ Command execution failed.")
 
-    except KeyboardInterrupt:
-        print("\nCancelled by user.")
-    except Exception as e:
-        print(f"\nAn error occurred: {e}")
-    finally:
-        comm.disconnect()
-        print("🔌 Disconnected from COM port.")
-        cleanup_temp_folder()
+        threading.Thread(target=_task, daemon=True).start()
+        return {"status": "STARTED"}
+
+    def run_csv_file(self, csv_path: str, prefix: str = "74"):
+        """Nạp và chạy tập lệnh từ file CSV."""
+        if not self.is_connected or not self.comm:
+            return {"status": "ERROR", "message": "Serial port not connected"}
+
+        if not os.path.exists(csv_path):
+            return {"status": "ERROR", "message": "CSV file does not exist"}
+
+        def _task():
+            self.log(f"\n--- Processing CSV File: {csv_path} ---")
+            cmds = get_commands_from_csv(csv_path, prefix=prefix, log_callback=self.log)
+            if not cmds:
+                self.log("⚠️ No valid commands extracted from CSV.")
+                return
+
+            self.log(f"📋 Loaded {len(cmds)} commands from CSV. Executing...")
+            success = execute_command_list(
+                self.comm,
+                cmds,
+                log_callback=self.log,
+                progress_callback=self.report_progress
+            )
+            if success:
+                self.log("🎉 CSV Commands execution finished successfully!")
+            else:
+                self.log("🛑 CSV Commands execution failed or stopped.")
+
+        threading.Thread(target=_task, daemon=True).start()
+        return {"status": "STARTED"}
+
+    def run_bin_flashing(self, bin_path: str, tool_type: str = "M12"):
+        """Nạp firmware file BIN và thực hiện quy trình Update Flashing."""
+        if not self.is_connected or not self.comm:
+            return {"status": "ERROR", "message": "Serial port not connected"}
+
+        if not os.path.exists(bin_path):
+            return {"status": "ERROR", "message": "BIN file does not exist"}
+
+        def _task():
+            self.log(f"\n--- Generating BIN Script for: {bin_path} (Tool: {tool_type}) ---")
+            script_data = generate_and_save_bin_script(
+                bin_path,
+                tool_type=tool_type,
+                log_callback=self.log
+            )
+
+            if not script_data:
+                self.log("❌ Failed to process BIN file and generate script.")
+                return
+
+            self.log("\n🚀 Starting Flashing Sequence...")
+            success = execute_bin_flashing_sequence(
+                self.comm,
+                script_data,
+                log_callback=self.log,
+                progress_callback=self.report_progress
+            )
+            if success:
+                self.log("🎉 Flashing process completed successfully!")
+            else:
+                self.log("🛑 Flashing process failed.")
+
+        threading.Thread(target=_task, daemon=True).start()
+        return {"status": "STARTED"}
 
 
-def cleanup_temp_folder():
-    """Delete the temp folder and all its contents."""
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        temp_dir = os.path.join(script_dir, "temp")
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
-            print("🧹 Temp folder deleted successfully.")
-    except Exception as e:
-        print(f"⚠️ Unable to delete temp folder: {e}")
+# ----------------------------------------------------------------------
+# Application Entry Point
+# ----------------------------------------------------------------------
+def main():
+    api = JSAPI()
+
+    # Đường dẫn đến ứng dụng React Build hoặc Dev Server
+    # 1. Nếu chạy Dev Server React (VD: Vite / Create React App):
+    # gui_url = "http://localhost:5173"
+    
+    # 2. Nếu load trực tiếp file build tĩnh HTML/JS:
+    gui_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist")
+    gui_url = os.path.join(gui_dir, "index.html") if os.path.exists(gui_dir) else "http://localhost:5173"
+
+    window = webview.create_window(
+        title="Software Update Tool",
+        url=gui_url,
+        js_api=api,
+        width=1280,
+        height=720,
+        resizable=True
+    )
+    
+    api.set_window(window)
+    webview.start(debug=True)
 
 
 if __name__ == "__main__":
