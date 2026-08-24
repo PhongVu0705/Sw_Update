@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Manual Command Send — execute raw commands directly to devices for debugging and testing."
+    />
+    <title>Manual Command Send | Software Update Tool</title>
+    <link rel="stylesheet" href="css/global.css" />
+    <link rel="stylesheet" href="css/screens.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css"
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23d01b2e'/%3E%3Cpath d='M8 3v6M5.5 7L8 9.5 10.5 7M4 12h8' stroke='%23fff' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <main class="screen-shell">
+      <header class="screen-header">
+        <div class="header-left">
+          <a class="back-button" href="index.html">
+            <i class="bi bi-arrow-left" aria-hidden="true"></i>
+            <span>Main Menu</span>
+          </a>
+          <div class="title-group">
+            <h1 class="app-title">Manual Command Send</h1>
+            <p class="app-subtitle">Software Update Tool v1.0.0</p>
+          </div>
+        </div>
+        <div
+          class="status-indicator"
+          role="status"
+          aria-label="System status: connected"
+        >
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="status-text">System Connected</span>
+        </div>
+      </header>
+
+      <div class="main-body stacked">
+        <section class="left-pane" aria-label="Command console controls">
+          <form class="panel control-panel" id="command-form" novalidate>
+            <div class="connection-row">
+              <div class="select-wrapper">
+                <label class="visually-hidden" for="com-port"
+                  >Select COM port</label
+                >
+                <select
+                  class="com-port-select"
+                  id="com-port"
+                  name="com-port"
+                  required
+                >
+                  <option value="" selected disabled>Select COM Port...</option>
+                  <option value="COM1">COM1</option>
+                  <option value="COM2">COM2</option>
+                  <option value="COM3">COM3</option>
+                  <option value="COM4">COM4</option>
+                </select>
+              </div>
+              <button class="connect-button" type="button" id="connect-button">
+                Connect
+              </button>
+            </div>
+
+            <h2 class="section-title">Command</h2>
+
+            <label class="visually-hidden" for="command-input">Command</label>
+            <input
+              class="command-input"
+              id="command-input"
+              type="text"
+              placeholder="Enter command, e.g. READ FW VERSION"
+              autocomplete="off"
+              spellcheck="false"
+            />
+
+            <div class="action-buttons">
+              <button class="btn-start" type="submit" id="send-button">
+                Send
+              </button>
+            </div>
+          </form>
+
+          <section
+            class="panel control-panel"
+            aria-labelledby="quick-command-title"
+          >
+            <h2 class="section-title" id="quick-command-title">
+              Quick Commands
+            </h2>
+            <div class="quick-grid">
+              <button type="button" class="quick-btn" data-command="TARGET M18">
+                Target M18
+              </button>
+              <button type="button" class="quick-btn" data-command="TARGET M12">
+                Target M12
+              </button>
+              <button
+                type="button"
+                class="quick-btn"
+                data-command="AUTH DEFAULT_METCO"
+              >
+                Send Default METCO Password
+              </button>
+              <button
+                type="button"
+                class="quick-btn"
+                data-command="GET CALIBRATION"
+              >
+                Get Calibration Data
+              </button>
+              <button
+                type="button"
+                class="quick-btn"
+                data-command="READ FW VERSION"
+              >
+                Read FW Version
+              </button>
+              <button
+                type="button"
+                class="quick-btn"
+                data-command="READ FW P/N"
+              >
+                Read FW P/N
+              </button>
+              <button type="button" class="quick-btn" data-command="READ MPBID">
+                Read MPBID
+              </button>
+              <button
+                type="button"
+                class="quick-btn"
+                data-command="WIPE COUNTERS"
+              >
+                Wipe Counters And Histograms
+              </button>
+            </div>
+          </section>
+        </section>
+
+        <section class="right-pane" aria-labelledby="terminal-title">
+          <div class="terminal-zone">
+            <div class="terminal-header">
+              <!-- <div class="dot-controls" aria-hidden="true">
+                <span class="red-dot"></span>
+                <span class="yellow-dot"></span>
+                <span class="green-dot"></span>
+              </div> -->
+              <h2 class="terminal-title" id="terminal-title">Terminal</h2>
+              <button class="terminal-clear" type="button" id="clear-logs">
+                Clear
+              </button>
+            </div>
+            <div
+              class="terminal-logs"
+              id="terminal-logs"
+              role="log"
+              aria-live="polite"
+              aria-label="Session logs"
+            ></div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Command result modal -->
+    <div class="modal-overlay" id="modal-overlay" hidden>
+      <div
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+      >
+        <header class="modal-header">
+          <h2 class="modal-title" id="modal-title"></h2>
+          <button
+            class="modal-close"
+            type="button"
+            aria-label="Close dialog"
+            data-close-modal
+          >
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
+          </button>
+        </header>
+        <div class="modal-body" id="modal-body"></div>
+      </div>
+    </div>
+
+    <script src="js/manual.js"></script>
+  </body>
+</html>
