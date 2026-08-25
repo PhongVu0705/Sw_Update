@@ -85,9 +85,29 @@ def send_and_get_final_rx(comm: OpenLinkComm, hex_cmd: str, timeout_ms=10000, lo
     _log("⚠️ Timeout or no response from MCU!", log_callback)
     return None
 
+def _first_cmd_failed(rx_bytes, log_callback=None) -> bool:
+    """
+    Check the feedback of the FIRST script command (normally the Target
+    select command '70 01 01 01' / '70 01 01 11').
+    A response header of 0x82 / 0x83 means 'Cannot get data' ->
+    show FAIL and stop the update immediately.
+    Returns True when the update must be stopped.
+    """
+    if rx_bytes and rx_bytes[0] in (0x82, 0x83):
+        _log(
+            f"❌ FAIL: Device responded {rx_bytes.hex(' ').upper()} "
+            f"(82/83 = Cannot get data) to the first command!",
+            log_callback,
+        )
+        _log("🛑 Update stopped!", log_callback)
+        return True
+    return False
+
+
 def execute_command_list(comm: OpenLinkComm, cmd_list: list, log_callback=None, progress_callback=None) -> bool:
     """Send commands sequentially from a prepared list (for CSV or single Hex)"""
     total = len(cmd_list)
+    first_cmd_checked = False
     for idx, cmd in enumerate(cmd_list, start=1):
         # Handle DELAY tag in command list
         if cmd.startswith("DELAY:"):
@@ -103,6 +123,13 @@ def execute_command_list(comm: OpenLinkComm, cmd_list: list, log_callback=None, 
         rx = send_and_get_rx(comm, cmd, log_callback=log_callback)
         if rx is None:
             return False
+
+        # Check feedback of the FIRST command (normally Target select
+        # "70 01 01 01" / "70 01 01 11"): 82/83 -> show FAIL and stop.
+        if not first_cmd_checked:
+            first_cmd_checked = True
+            if cmd.strip().upper().startswith("70") and _first_cmd_failed(rx, log_callback):
+                return False
     return True
 
 def execute_bin_flashing_sequence(comm: OpenLinkComm, script_data: dict, log_callback=None, progress_callback=None) -> bool:
@@ -119,12 +146,13 @@ def execute_bin_flashing_sequence(comm: OpenLinkComm, script_data: dict, log_cal
 
     _log("\nStarting to send Update command sequence to Tool...", log_callback)
     x1, x2, x3, x4, x5, x6 = None, None, None, None, None, None
+    first_cmd_checked = False
 
     for idx, cmd in enumerate(script_commands, start=1):
         # Handle DELAY command
         if cmd.startswith("DELAY:"):
             delay_ms = int(cmd.split(":")[1])
-            _log(f"Delaying for {delay_ms / 1000.0}s...", log_callback)
+            # _log(f"Delaying for {delay_ms / 1000.0}s...", log_callback)
             time.sleep(delay_ms / 1000.0)
             continue
 
@@ -156,6 +184,13 @@ def execute_bin_flashing_sequence(comm: OpenLinkComm, script_data: dict, log_cal
             _log(f"Failed at command {idx}/{len(script_commands)}", log_callback)
             return False
 
+        # Check feedback of the FIRST command (normally Target select
+        # "70 01 01 01" / "70 01 01 11"): 82/83 -> show FAIL and stop.
+        if not first_cmd_checked:
+            first_cmd_checked = True
+            if cmd.strip().upper().startswith("70") and _first_cmd_failed(rx_bytes, log_callback):
+                return False
+
         # 4. Extract Params (X1, X2, X3, X4, X5, X6) if response to "74 <SeqID> 01 15"
         # Data format after header (3 bytes): 01 X1 X2 X3 X4 00 00 00 00 00 X5 X6 01 00 00 00
         if "01 15" in cmd and len(rx_bytes) >= 18:
@@ -174,5 +209,5 @@ def execute_bin_flashing_sequence(comm: OpenLinkComm, script_data: dict, log_cal
             else:
                 _log(f"Warning: Unexpected response header: {rx_bytes[0]:02X}", log_callback)
 
-    _log("\n🎉 === FIRMWARE UPDATE PROCESS COMPLETED SUCCESSFULLY ===", log_callback)
+    _log("\n=== FIRMWARE UPDATE PROCESS COMPLETED SUCCESSFULLY ===", log_callback)
     return True
