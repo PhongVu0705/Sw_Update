@@ -125,9 +125,9 @@ def cleanup_temp_folder():
         temp_dir = os.path.join(script_dir, "temp")
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
-            print("🧹 Temp folder deleted successfully.")
+            print("Temp folder deleted successfully.")
     except Exception as e:
-        print(f"⚠️ Unable to delete temp folder: {e}")
+        print(f"Unable to delete temp folder: {e}")
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@
             <span>Main Menu</span>
           </a>
           <div class="title-group">
-            <h1 class="app-title">Mass Update</h1>
+            <h1 class="app-title">FW Update</h1>
             <p class="app-subtitle">Software Update Tool v1.0.0</p>
           </div>
         </div>
@@ -88,7 +88,19 @@
               </button>
             </div>
 
-            <h2 class="section-title">Select Firmware File</h2>
+            <div class="section-title-row">
+              <h2 class="section-title">Select Firmware File</h2>
+              <button
+                class="guide-link"
+                type="button"
+                id="open-guide"
+                aria-haspopup="dialog"
+                aria-controls="guide-overlay"
+              >
+                <i class="bi bi-question-circle" aria-hidden="true"></i>
+                <span>How to get CSV file?</span>
+              </button>
+            </div>
 
             <div class="drop-zone" id="drop-zone">
               <i
@@ -203,9 +215,7 @@
           <div class="progress-head">
             <div>
               <h2 class="progress-label" id="progress-label">Flashing MCU</h2>
-              <p class="speed-info" id="speed-info">
-                Estimated Time Remaining: —
-              </p>
+              <p class="speed-info" id="speed-info"></p>
             </div>
             <output class="progress-percentage" id="progress-percentage"
               >0%</output
@@ -225,6 +235,142 @@
         </section>
       </footer>
     </main>
+
+    <!-- Update guide modal ("How to get CSV file?") -->
+    <div class="modal-overlay" id="guide-overlay" hidden>
+      <div
+        class="modal guide-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="guide-modal-title"
+      >
+        <header class="modal-header">
+          <h2 class="modal-title" id="guide-modal-title">Update Guide</h2>
+          <button
+            class="modal-close"
+            type="button"
+            aria-label="Close guide"
+            data-close-guide
+          >
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
+          </button>
+        </header>
+        <div class="modal-body guide-modal-body">
+          <ol class="guide-timeline">
+            <!-- Step 1 -->
+            <li class="guide-step">
+              <ul class="steps">
+                <li class="step-item">
+                  <span class="step-badge" aria-hidden="true">1</span>
+                  <div>
+                    <h3 class="step-title">Connect to your tool</h3>
+                    <p class="step-text">
+                      Plug the tool into the PC, select its COM port and press
+                      <strong>Connect</strong>.
+                    </p>
+                  </div>
+                </li>
+              </ul>
+              <figure class="step-figure">
+                <img
+                  src="img/1.png"
+                  alt="Selecting the COM port and connecting to the tool"
+                  loading="lazy"
+                />
+              </figure>
+            </li>
+
+            <!-- Steps 2 - 3 -->
+            <li class="guide-step">
+              <ul class="steps">
+                <li class="step-item">
+                  <span class="step-badge" aria-hidden="true">2</span>
+                  <div>
+                    <h3 class="step-title">Delete log</h3>
+                    <p class="step-text">
+                      Clear the old entries in the terminal so the new run
+                      starts clean.
+                    </p>
+                  </div>
+                </li>
+                <li class="step-item">
+                  <span class="step-badge" aria-hidden="true">3</span>
+                  <div>
+                    <h3 class="step-title">Press update</h3>
+                    <p class="step-text">Choose the FW you want to update.</p>
+                  </div>
+                </li>
+              </ul>
+              <figure class="step-figure">
+                <img
+                  src="img/2.png"
+                  alt="Clearing the terminal log and pressing update"
+                  loading="lazy"
+                />
+              </figure>
+            </li>
+
+            <!-- Step 4 -->
+            <li class="guide-step">
+              <ul class="steps">
+                <li class="step-item">
+                  <span class="step-badge" aria-hidden="true">4</span>
+                  <div>
+                    <h3 class="step-title">
+                      Choose firmware you want to update
+                    </h3>
+                    <p class="step-text">
+                      Browse and select the firmware file for your tool.
+                    </p>
+                  </div>
+                </li>
+              </ul>
+              <figure class="step-figure">
+                <img
+                  src="img/3.png"
+                  alt="Choosing the firmware file to update"
+                  loading="lazy"
+                />
+              </figure>
+            </li>
+
+            <!-- Steps 5 - 6 -->
+            <li class="guide-step">
+              <ul class="steps">
+                <li class="step-item">
+                  <span class="step-badge" aria-hidden="true">5</span>
+                  <div>
+                    <h3 class="step-title">
+                      After completed, press 3 dots button
+                    </h3>
+                    <p class="step-text">
+                      Once the update has finished, open the
+                      <strong>&#8942;</strong> (three dots) menu.
+                    </p>
+                  </div>
+                </li>
+                <li class="step-item">
+                  <span class="step-badge" aria-hidden="true">6</span>
+                  <div>
+                    <h3 class="step-title">Download the CSV log file</h3>
+                    <p class="step-text">
+                      Save the session log as a CSV file for your records.
+                    </p>
+                  </div>
+                </li>
+              </ul>
+              <figure class="step-figure">
+                <img
+                  src="img/4.png"
+                  alt="Opening the three-dot menu and downloading the CSV log file"
+                  loading="lazy"
+                />
+              </figure>
+            </li>
+          </ol>
+        </div>
+      </div>
+    </div>
 
     <script src="js/bridge.js"></script>
     <script src="js/update.js"></script>

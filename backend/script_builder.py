@@ -174,8 +174,8 @@ def generate_and_save_bin_script(bin_path: str, tool_type: str = "M12", log_call
         for cmd in script_commands:
             f.write(f"{cmd}\n")
 
-    _log(f"✅ Command script generated successfully! TOTAL COMMANDS: {len(script_commands)}", log_callback)
-    _log(f"📄 Script TXT file: {script_txt_path}", log_callback)
+    _log(f"Command script generated successfully! TOTAL COMMANDS: {len(script_commands)}", log_callback)
+    _log(f"Script TXT file: {script_txt_path}", log_callback)
 
     return {
         "script_path": script_txt_path,

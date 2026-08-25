@@ -43,6 +43,13 @@
   );
   const statusText = statusIndicator.querySelector(".status-text");
 
+  // Update guide modal ("How to get CSV file?")
+  const guideOverlay = $("guide-overlay");
+  const guideOpenButton = $("open-guide");
+  const guideCloseButton = guideOverlay
+    ? guideOverlay.querySelector("[data-close-guide]")
+    : null;
+
   /* ---------- Constants & state ---------- */
 
   const TICK_MS = 600;
@@ -566,6 +573,45 @@
     // Clear logs
     clearLogsButton.addEventListener("click", () => {
       terminalLogs.replaceChildren();
+    });
+
+    // Update guide modal
+    let guideLastFocus = null;
+
+    const openGuide = () => {
+      if (!guideOverlay) return;
+      guideLastFocus = document.activeElement;
+      guideOverlay.hidden = false;
+      document.body.style.overflow = "hidden";
+      if (guideCloseButton) guideCloseButton.focus();
+    };
+
+    const closeGuide = () => {
+      if (!guideOverlay || guideOverlay.hidden) return;
+      guideOverlay.hidden = true;
+      document.body.style.overflow = "";
+      if (guideLastFocus && typeof guideLastFocus.focus === "function") {
+        guideLastFocus.focus();
+      }
+      guideLastFocus = null;
+    };
+
+    if (guideOpenButton) {
+      guideOpenButton.addEventListener("click", openGuide);
+    }
+
+    if (guideCloseButton) {
+      guideCloseButton.addEventListener("click", closeGuide);
+    }
+
+    if (guideOverlay) {
+      guideOverlay.addEventListener("click", (event) => {
+        if (event.target === guideOverlay) closeGuide();
+      });
+    }
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeGuide();
     });
   }
 

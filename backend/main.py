@@ -49,6 +49,10 @@ BAUD_RATE = 115200
 # Check FW version command: 01 00 03 00 0D 04 00 15
 FW_CHECK_CMD = "01 00 03 00 0D 04 00 15"
 
+# Delay after a finished update before sending the FW check command,
+# giving the device time to reboot / settle into application mode.
+FW_CHECK_DELAY_S = 3.0
+
 # Response frame layout: Header(1) + SeqID(1) + Len(1) + Data(Len) + Checksum(2)
 # Version data = 4 bytes starting at byte 4 (index 3).
 FW_DATA_START = 3
@@ -363,7 +367,12 @@ class JSAPI:
 
         if update_ok:
             if expected_fw:
-                self.log("\n🔎 Verifying firmware version...")
+                # Let the device settle after flashing before asking for
+                # the FW version.
+                self.log(f"⏳ Update done - waiting {FW_CHECK_DELAY_S:.0f} s before FW check...")
+                time.sleep(FW_CHECK_DELAY_S)
+
+                self.log("🔎 Verifying firmware version...")
                 check = self.verify_fw_version(expected_fw)
                 detected_fw = check.get("detected")
                 check_state = check["pass"]

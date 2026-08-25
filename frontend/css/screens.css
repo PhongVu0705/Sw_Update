@@ -955,6 +955,138 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+/* ---------- Section title row + guide link (update.html) ---------- */
+
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.guide-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  color: #d01b2e;
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 150ms ease;
+}
+
+.guide-link:hover {
+  color: #b31726;
+  text-decoration: underline;
+}
+
+.guide-link:focus-visible {
+  outline: 3px solid #111827;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------- Guide modal content (update.html) ---------- */
+
+.guide-modal {
+  max-width: 860px;
+}
+
+.guide-modal .modal-body {
+  padding: 20px 24px;
+}
+
+.guide-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.guide-step {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(240px, 380px);
+  gap: 18px;
+  align-items: center;
+  padding: 16px;
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.step-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background-color: #d01b2e;
+  color: #ffffff;
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.step-title {
+  margin: 0 0 3px;
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  color: #111827;
+}
+
+.step-text {
+  margin: 0;
+  font-family: "Inter-Regular", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #4b5563;
+}
+
+.step-figure {
+  margin: 0;
+  background-color: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.step-figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@media (max-width: 720px) {
+  .guide-step {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 1024px) {
