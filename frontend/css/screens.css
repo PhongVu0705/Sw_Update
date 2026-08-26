@@ -281,6 +281,54 @@
   outline-offset: 2px;
 }
 
+/* ---------- Refresh COM ports button ---------- */
+
+.refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 42px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #111827;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.refresh-button:hover {
+  background-color: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.refresh-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.refresh-button:focus-visible {
+  outline: 3px solid #111827;
+  outline-offset: 2px;
+}
+
+@keyframes refresh-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.refresh-button.is-spinning i {
+  animation: refresh-spin 800ms linear infinite;
+}
+
 /* ---------- Tool type selector ---------- */
 
 .tool-type-row {

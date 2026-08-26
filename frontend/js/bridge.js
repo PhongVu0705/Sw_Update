@@ -40,26 +40,36 @@
       this._readyPromise = new Promise((resolve) => {
         let settled = false;
 
-        const check = () => {
-          if (window.pywebview && window.pywebview.api) {
+        const settle = (found) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          if (found) {
             this.available = true;
             this.api = window.pywebview.api;
-            settled = true;
-            resolve(true);
-          } else if (!settled) {
+          }
+          resolve(found);
+        };
+
+        const check = () => {
+          if (settled) {
+            return;
+          }
+          if (window.pywebview && window.pywebview.api) {
+            settle(true);
+          } else {
             setTimeout(check, 100);
           }
         };
 
+        // pywebview fires 'pywebviewready' as soon as the API is injected
+        window.addEventListener("pywebviewready", check);
+
         check();
 
-        // Give up after 4s -> plain browser / simulation mode
-        setTimeout(() => {
-          if (!settled) {
-            settled = true;
-            resolve(false);
-          }
-        }, 4000);
+        // Give up after 8s -> plain browser / simulation mode
+        setTimeout(() => settle(false), 8000);
       });
 
       return this._readyPromise;

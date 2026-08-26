@@ -16,6 +16,8 @@
   const form = $("command-form");
   const comPort = $("com-port");
   const connectButton = $("connect-button");
+  const refreshPortsButton = $("refresh-ports-button");
+  const backButton = $("back-button");
   const commandInput = $("command-input");
   const clearLogsButton = $("clear-logs");
   const terminalLogs = $("terminal-logs");
@@ -259,6 +261,8 @@
         return;
       }
       const ports = r.ports || [];
+      const previousSelection = comPort.value;
+
       comPort.replaceChildren();
       const placeholder = document.createElement("option");
       placeholder.value = "";
@@ -274,6 +278,16 @@
         option.textContent = `${p.port} — ${p.description}`;
         comPort.appendChild(option);
       });
+
+      // Keep the previous selection when the port is still present
+      if (
+        previousSelection &&
+        ports.some((p) => p.port === previousSelection)
+      ) {
+        comPort.value = previousSelection;
+      }
+
+      appendLog("info", `Found ${ports.length} COM port(s).`);
       if (!ports.length) {
         appendLog("warning", "No COM ports found on this system.");
       }
@@ -353,6 +367,16 @@
       appendLog("warning", "Cannot send: no device connected.");
       comPort.focus();
       return;
+    }
+
+    // Reading calibration data sends the METCO password first
+    // (mirrors the backend run_quick_command behaviour).
+    if (label === "GET CALIBRATION") {
+      appendLog("sent", "[SIM] >> AUTH DEFAULT_METCO");
+      setTimeout(
+        () => appendLog("response", "[SIM] << AUTH OK — session opened"),
+        250,
+      );
     }
 
     appendLog("sent", `[SIM] >> ${label}`);
@@ -445,6 +469,40 @@
     }
   });
 
+  // Back button ("Main Menu"): disconnect the COM port before leaving.
+  // When not connected the link behaves normally.
+  backButton.addEventListener("click", async (event) => {
+    if (!isConnected) return;
+
+    event.preventDefault();
+    backButton.style.pointerEvents = "none"; // guard against double clicks
+    try {
+      if (Bridge.available) {
+        await Bridge.api.disconnect_port();
+      }
+    } catch (err) {
+      appendLog("error", `Disconnect failed: ${err.message}`);
+    } finally {
+      window.location.href = backButton.href;
+    }
+  });
+
+  // Refresh COM port list
+  refreshPortsButton.addEventListener("click", async () => {
+    refreshPortsButton.disabled = true;
+    refreshPortsButton.classList.add("is-spinning");
+    try {
+      if (Bridge.available) {
+        await refreshPorts();
+      } else {
+        appendLog("info", "[SIM] COM port list refreshed.");
+      }
+    } finally {
+      refreshPortsButton.classList.remove("is-spinning");
+      refreshPortsButton.disabled = false;
+    }
+  });
+
   // Quick commands
   quickButtons.forEach((button) =>
     button.addEventListener("click", () => {
@@ -519,6 +577,21 @@
         "warning",
         "Running in SIMULATION mode — no Python backend detected.",
       );
+      // A plain browser cannot access real COM ports, so populate a
+      // clearly-labelled simulated list (never looks like real hardware).
+      const placeholderOption = comPort.querySelector("option[value='']");
+      if (placeholderOption) {
+        placeholderOption.textContent = "Select COM Port...";
+      }
+      [
+        ["SIM-COM3", "Simulated Serial Port"],
+        ["SIM-COM4", "Simulated USB Device"],
+      ].forEach(([value, description]) => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = `${value} — ${description}`;
+        comPort.appendChild(option);
+      });
       setConnectedUI(false, null);
     }
   })();

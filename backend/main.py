@@ -361,6 +361,10 @@ class JSAPI:
 
         # ----------------------------------------------------------
         # Post-update FW version verification
+        # NOTE: The FW version comparison has its OWN pass/fail result
+        # ('fwCheck') reported to the frontend separately. It NEVER flips
+        # the update result to FAIL - the update only fails when a
+        # command could not be completed.
         # ----------------------------------------------------------
         detected_fw = None
         check_state = None  # True / False / None (skipped)
@@ -376,19 +380,24 @@ class JSAPI:
                 check = self.verify_fw_version(expected_fw)
                 detected_fw = check.get("detected")
                 check_state = check["pass"]
-                if not check_state:
-                    fail_reason = fail_reason or check.get("reason") or "FW version mismatch"
             else:
                 self.log("\nℹ️ No expected FW version provided — skipping verification.")
         elif not fail_reason:
             fail_reason = "Update failed"
 
-        overall = "PASS" if (update_ok and check_state is not False) else "FAIL"
+        # UPDATE RESULT = PASS only when every command was sent and
+        # acknowledged successfully; FAIL as soon as one command fails.
+        overall = "PASS" if update_ok else "FAIL"
 
         if overall == "PASS":
             self.log("\n🎉 === UPDATE FINISHED: PASS ===")
-            if detected_fw:
+            if check_state is True:
                 self.log(f"✅ FW version verified: {detected_fw}")
+            elif check_state is False:
+                self.log(
+                    f"⚠️ WARNING: FW version check FAILED - "
+                    f"detected {detected_fw}, expected {expected_fw}"
+                )
         else:
             self.log(f"\n🛑 === UPDATE FINISHED: FAIL — {fail_reason} ===")
 
@@ -494,6 +503,31 @@ class JSAPI:
             if stripped.startswith("--- [TX]") or stripped.startswith("QUICK COMMAND"):
                 return
             self.log(text)
+
+        # Reading calibration data requires an authenticated session:
+        # always send the default METCO password first.
+        if cmd_type == "calibration":
+            self.log(
+                "🔑 Sending default METCO password before reading calibration data..."
+            )
+            auth_rx = send_and_get_final_rx(
+                self.comm,
+                QUICK_COMMANDS["metco_password"],
+                timeout_ms=10000,
+                log_callback=quick_log,
+            )
+            if auth_rx is None:
+                return {
+                    "status": "TIMEOUT",
+                    "title": title,
+                    "result": "Timeout waiting for METCO password response",
+                }
+            if auth_rx[0] in (0x82, 0x83):
+                return {
+                    "status": "ERROR",
+                    "title": title,
+                    "result": "Cannot get data (METCO password)",
+                }
 
         rx = send_and_get_final_rx(
             self.comm, cmd, timeout_ms=10000, log_callback=quick_log

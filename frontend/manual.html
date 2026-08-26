@@ -23,7 +23,7 @@
     <main class="screen-shell">
       <header class="screen-header">
         <div class="header-left">
-          <a class="back-button" href="index.html">
+          <a class="back-button" href="index.html" id="back-button">
             <i class="bi bi-arrow-left" aria-hidden="true"></i>
             <span>Main Menu</span>
           </a>
@@ -56,13 +56,18 @@
                   name="com-port"
                   required
                 >
-                  <option value="" selected disabled>Select COM Port...</option>
-                  <option value="COM1">COM1</option>
-                  <option value="COM2">COM2</option>
-                  <option value="COM3">COM3</option>
-                  <option value="COM4">COM4</option>
+                  <option value="" selected disabled>Loading COM ports...</option>
                 </select>
               </div>
+              <button
+                class="refresh-button"
+                type="button"
+                id="refresh-ports-button"
+                title="Refresh COM port list"
+                aria-label="Refresh COM port list"
+              >
+                <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+              </button>
               <button class="connect-button" type="button" id="connect-button">
                 Connect
               </button>
