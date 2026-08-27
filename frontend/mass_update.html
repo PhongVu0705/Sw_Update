@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Mass Update — automatic production-line flashing: connect, program and verify each PCBA."
+    />
+    <title>Mass Update | Software Update Tool</title>
+    <link rel="stylesheet" href="css/global.css" />
+    <link rel="stylesheet" href="css/screens.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css"
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23d01b2e'/%3E%3Cpath d='M8 3v6M5.5 7L8 9.5 10.5 7M4 12h8' stroke='%23fff' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <main class="screen-shell">
+      <header class="screen-header">
+        <div class="header-left">
+          <a class="back-button" href="index.html" id="back-button">
+            <i class="bi bi-arrow-left" aria-hidden="true"></i>
+            <span>Main Menu</span>
+          </a>
+          <div class="title-group">
+            <h1 class="app-title">Mass Update</h1>
+            <p class="app-subtitle">Software Update Tool v1.0.0</p>
+          </div>
+        </div>
+        <div
+          class="status-indicator"
+          role="status"
+          aria-label="System status: connected"
+        >
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="status-text">System Connected</span>
+        </div>
+      </header>
+
+      <div class="main-body halves">
+        <section class="left-pane" aria-label="Mass update controls">
+          <form class="panel control-panel" id="mass-form" novalidate>
+            <div class="connection-row">
+              <div class="select-wrapper">
+                <label class="visually-hidden" for="com-port"
+                  >Select COM port</label
+                >
+                <select
+                  class="com-port-select"
+                  id="com-port"
+                  name="com-port"
+                  required
+                >
+                  <option value="" selected disabled>Loading COM ports...</option>
+                </select>
+              </div>
+              <button
+                class="refresh-button"
+                type="button"
+                id="refresh-ports-button"
+                title="Refresh COM port list"
+                aria-label="Refresh COM port list"
+              >
+                <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+              </button>
+            </div>
+
+            <div class="tool-type-row" role="radiogroup" aria-label="Tool type">
+              <span class="tool-type-label">Tool Type:</span>
+              <button
+                type="button"
+                class="tool-btn is-active"
+                data-tool="M12"
+                aria-pressed="true"
+              >
+                M12
+              </button>
+              <button
+                type="button"
+                class="tool-btn"
+                data-tool="M18"
+                aria-pressed="false"
+              >
+                M18
+              </button>
+            </div>
+
+            <h2 class="section-title">Select Firmware File</h2>
+
+            <div class="drop-zone" id="drop-zone">
+              <i class="bi bi-file-earmark-binary file-icon" aria-hidden="true"></i>
+              <div class="file-info">
+                <span class="file-path" id="firmware-file-label">No file selected</span>
+                <span class="file-meta" id="firmware-file-meta">Drag &amp; drop a .bin or .csv file here, or browse</span>
+              </div>
+              <input
+                id="firmware-file"
+                type="file"
+                accept=".bin,.csv,application/octet-stream,text/csv"
+                hidden
+              />
+              <label class="browse-button" for="firmware-file">
+                <i class="bi bi-upload" aria-hidden="true"></i>
+                <span>Browse</span>
+              </label>
+            </div>
+
+            <h2 class="section-title">
+              Fw version check <span class="required-mark">*</span>
+            </h2>
+            <label class="visually-hidden" for="expected-fw">Expected firmware version in decimal (required)</label>
+            <input
+              class="command-input"
+              id="expected-fw"
+              name="expected-fw"
+              type="text"
+              placeholder="Required - e.g. 1.4.2"
+              autocomplete="off"
+              spellcheck="false"
+              required
+            />
+
+            <div class="action-buttons" aria-label="Mass update controls">
+              <button class="btn-start" type="submit" id="start-button">Start</button>
+              <button class="btn-secondary" type="button" id="stop-button" disabled>Stop</button>
+            </div>
+
+          </form>
+
+          <section class="status-cards-row" aria-label="Mass update results">
+            <article class="panel stat-card">
+              <span class="stat-icon info" aria-hidden="true">
+                <i class="bi bi-pie-chart-fill"></i>
+              </span>
+              <div>
+                <p class="stat-label">PASS / FAIL RATE</p>
+                <strong class="stat-value" id="rate-value">&mdash;</strong>
+                <p class="stat-sub" id="rate-detail">Passed 0 &middot; Failed 0</p>
+              </div>
+            </article>
+            <article class="panel stat-card">
+              <span class="stat-icon info" aria-hidden="true">
+                <i class="bi bi-collection-fill"></i>
+              </span>
+              <div>
+                <p class="stat-label">TOTAL UPDATED</p>
+                <strong class="stat-value" id="total-count">0</strong>
+                <p class="stat-sub" id="total-sub">PCBA updated this session</p>
+              </div>
+            </article>
+          </section>
+        </section>
+
+        <section class="right-pane" aria-labelledby="terminal-title">
+          <div class="terminal-zone">
+            <div class="terminal-header">
+              <h2 class="terminal-title" id="terminal-title">Terminal</h2>
+              <button class="terminal-clear" type="button" id="clear-logs">
+                Clear
+              </button>
+            </div>
+            <div
+              class="terminal-logs"
+              id="terminal-logs"
+              role="log"
+              aria-live="polite"
+              aria-label="Mass update logs"
+            ></div>
+          </div>
+        </section>
+      </div>
+
+      <footer class="footer-progress-area">
+        <section class="progress-section" aria-labelledby="progress-label">
+          <div class="progress-head">
+            <div>
+              <h2 class="progress-label" id="progress-label">Waiting for start</h2>
+              <p class="speed-info" id="speed-info"></p>
+            </div>
+            <output class="progress-percentage" id="progress-percentage">0%</output>
+          </div>
+          <div
+            class="progress-track"
+            id="progress-track"
+            role="progressbar"
+            aria-label="Firmware flashing progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+          >
+            <div class="progress-bar-fill" id="progress-bar-fill"></div>
+          </div>
+        </section>
+      </footer>
+
+    </main>
+    <!-- Mass update result modal -->
+    <div class="modal-overlay" id="result-overlay" hidden>
+      <div
+        class="modal result-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="result-modal-title"
+      >
+        <header class="modal-header">
+          <h2 class="modal-title" id="result-modal-title">Mass Update Result</h2>
+          <button
+            class="modal-close"
+            type="button"
+            aria-label="Close result dialog"
+            data-close-result
+          >
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
+          </button>
+        </header>
+        <div class="modal-body result-body">
+          <span class="result-badge pass" id="result-badge">PASS</span>
+          <dl class="result-details">
+            <div>
+              <dt>Detected FW</dt>
+              <dd id="result-detected">&mdash;</dd>
+            </div>
+            <div>
+              <dt>Expected FW</dt>
+              <dd id="result-expected">&mdash;</dd>
+            </div>
+            <div>
+              <dt>Total updated</dt>
+              <dd id="result-total">0</dd>
+            </div>
+            <div>
+              <dt>Reason</dt>
+              <dd id="result-reason">&mdash;</dd>
+            </div>
+          </dl>
+          <p class="next-pcba-text">
+            <i class="bi bi-arrow-down-up" aria-hidden="true"></i>
+            <span>Insert next PCBA</span>
+          </p>
+          <button class="btn-start" type="button" id="result-ok-button">
+            Next PCBA
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="js/bridge.js"></script>
+    <script src="js/mass_update.js"></script>
+  </body>
+</html>

@@ -1176,3 +1176,103 @@ button:disabled {
     flex-direction: column;
   }
 }
+/* ---------- Mass Update screen ---------- */
+
+.stat-icon.info {
+  background-color: #eef2ff;
+  color: #4f46e5;
+}
+
+.required-mark {
+  color: #d01b2e;
+}
+
+.result-modal {
+  max-width: 480px;
+}
+
+.result-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 28px 24px;
+  text-align: center;
+}
+
+.result-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 26px;
+  border-radius: 999px;
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.result-badge.pass {
+  background-color: #d1fae5;
+  color: #047857;
+}
+
+.result-badge.fail {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.result-details {
+  width: 100%;
+  margin: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  text-align: left;
+}
+
+.result-details div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 14px;
+  font-size: 13px;
+}
+
+.result-details div:nth-child(odd) {
+  background-color: #f9fafb;
+}
+
+.result-details dt {
+  margin: 0;
+  color: #6b7280;
+  font-family: "Inter-Regular", Helvetica, Arial, sans-serif;
+}
+
+.result-details dd {
+  margin: 0;
+  color: #111827;
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  word-break: break-all;
+  text-align: right;
+}
+
+.next-pcba-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 0;
+  padding: 12px 20px;
+  border-radius: 10px;
+  background-color: rgba(208, 27, 46, 0.08);
+  border: 1px dashed rgba(208, 27, 46, 0.4);
+  color: #b31726;
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.next-pcba-text i {
+  font-size: 20px;
+}
+

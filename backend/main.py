@@ -21,12 +21,14 @@ import webview
 
 import app_paths
 
+import command_runner  # module-level last_rx_frame access for mass polling
 from opelink_comm import OpenLinkComm, list_ports
 from command_runner import (
     execute_bin_flashing_sequence,
     execute_command_list,
     on_rx_callback,
     on_tx_callback,
+    print_queued_messages,
     send_and_get_final_rx,
 )
 from csv_processor import get_commands_from_csv
@@ -57,6 +59,11 @@ FW_CHECK_DELAY_S = 3.0
 # Version data = 4 bytes starting at byte 4 (index 3).
 FW_DATA_START = 3
 FW_DATA_LENGTH = 4
+
+# Mass update retries
+MASS_CONNECT_RETRY_S = 0.5  # auto-connect cadence
+MASS_TARGET_RETRY_S = 0.5  # Target-command re-send cadence
+TARGET_ACK_HEADER = 0x80  # expected first byte of a successful Target ACK
 
 QUICK_COMMANDS = {
     "fw_version": "01 00 03 00 0D 04 00 15",
@@ -108,6 +115,10 @@ class RunController:
         if self._stop.is_set():
             raise RuntimeError("Aborted by operator")
 
+    def stop_requested(self) -> bool:
+        """Non-blocking stop check usable inside retry loops."""
+        return self._stop.is_set()
+
 
 def sanitize_log(message: str) -> str:
     """
@@ -136,6 +147,7 @@ class JSAPI:
         self.is_connected = False
         self.connected_port = None
         self.controller = RunController()
+        self.mass_running = False
 
     # ------------------------------------------------------------------
     # Window & push helpers
@@ -447,6 +459,269 @@ class JSAPI:
             "detected": detected,
             "reason": "" if passed else "FW version mismatch",
         }
+
+    # ------------------------------------------------------------------
+    # Mass update: auto-connect -> Target ACK 0x80 -> flash -> verify
+    # ------------------------------------------------------------------
+    def run_mass_update(
+        self, port: str, file_path: str, tool_type: str = "M12", expected_fw: str = ""
+    ):
+        """
+        Start one mass-update cycle in a background thread.
+
+        The worker:
+          1. retries opening the selected COM port every 0.5 s
+          2. sends the Target select command (M12/M18) every 0.5 s until the
+             response header byte is 0x80
+          3. flashes the firmware exactly like the Update page
+          4. reads back the FW version and compares it with the REQUIRED
+             user input, disconnects and pushes 'onMassFinished'.
+        """
+        if self.mass_running:
+            return {"status": "ERROR", "message": "A mass update is already running"}
+
+        if not port or not str(port).strip():
+            return {"status": "ERROR", "message": "No COM port selected"}
+
+        file_path = str(file_path).strip().strip("\"'")
+        if not os.path.exists(file_path):
+            return {"status": "ERROR", "message": f"File does not exist: {file_path}"}
+
+        ext = os.path.splitext(file_path)[1].lower().lstrip(".")
+        if ext not in ("bin", "csv"):
+            return {
+                "status": "ERROR",
+                "message": "Unsupported file type — choose a .bin or .csv file",
+            }
+
+        tool_type = "M18" if str(tool_type).upper() == "M18" else "M12"
+
+        # FW check input is REQUIRED for mass update.
+        expected_fw = str(expected_fw).strip()
+        if not expected_fw:
+            return {
+                "status": "ERROR",
+                "message": "Fw version check is REQUIRED - enter the expected firmware version to run.",
+            }
+        if not re.fullmatch(r"\d+(\.\d+){0,3}", expected_fw):
+            return {
+                "status": "ERROR",
+                "message": "Invalid FW version format — use decimal numbers separated by dots, e.g. 1.4.2",
+            }
+
+        port_name = str(port).split(" - ")[0].strip()
+
+        self.controller.reset()
+        self.mass_running = True
+        threading.Thread(
+            target=self._mass_update_worker,
+            args=(port_name, file_path, ext, tool_type, expected_fw),
+            daemon=True,
+        ).start()
+        return {"status": "STARTED"}
+
+    def _mass_connect_loop(self, port_name: str) -> bool:
+        """Retry connecting every 0.5 s until success / stop request."""
+        attempts = 0
+        while not self.controller.stop_requested():
+            attempts += 1
+            if attempts == 1 or attempts % 10 == 0:
+                self.log(f"🔌 Connect attempt {attempts} on {port_name}...")
+
+            # Shared command_runner callbacks keep last_rx_frame / msg_queue
+            # working for the later flashing + FW-read stages.
+            comm = OpenLinkComm(
+                port=port_name,
+                baud_rate=BAUD_RATE,
+                on_rx=on_rx_callback,
+                on_tx=on_tx_callback,
+            )
+            if comm.connect():
+                self.comm = comm
+                self.is_connected = True
+                self.connected_port = port_name
+                self._push_connection()
+                self.log(f"✅ Connected to {port_name} after {attempts} attempt(s).")
+                return True
+
+            time.sleep(MASS_CONNECT_RETRY_S)
+        return False
+
+    def _mass_target_ack_loop(self, tool_type: str) -> bool:
+        """Poll Target select every 0.5 s until response header byte == 0x80."""
+        target_base = "70 01 01 01" if tool_type == "M18" else "70 01 01 11"
+        target_frame = bytes.fromhex(build_frame(target_base))
+        label = "M18" if tool_type == "M18" else "M12"
+
+        sends = 0
+        while True:
+            if self.controller.stop_requested():
+                return False
+
+            cycle_start = time.monotonic()
+            sends += 1
+
+            command_runner.last_rx_frame = None
+            self.log(
+                f"[TX]: Sending Target {label} select command (attempt {sends})..."
+            )
+            if not self.comm.send_no_wait(target_frame):
+                self.log("⚠️ Failed to send Target command!")
+            else:
+                # Wait up to one retry cycle (0.5 s) for a frame from the device
+                rx = None
+                deadline = cycle_start + MASS_TARGET_RETRY_S
+                while time.monotonic() < deadline:
+                    time.sleep(0.05)
+                    print_queued_messages(self.log)
+                    rx = command_runner.last_rx_frame
+                    if rx is not None:
+                        break
+
+                if rx is not None:
+                    first_byte = rx[0]
+                    self.log(f"[MCU RX]: {rx.hex(' ').upper()} (header {first_byte:02X})")
+                    if first_byte == TARGET_ACK_HEADER:
+                        self.log(
+                            f"🎯 Target ACK (80) received after {sends} send(s) - starting programming."
+                        )
+                        return True
+                elif sends == 1 or sends % 10 == 0:
+                    self.log(f"⚠️ No response after Target attempt {sends} - retrying...")
+
+            remaining = MASS_TARGET_RETRY_S - (time.monotonic() - cycle_start)
+            if remaining > 0:
+                time.sleep(remaining)
+
+    def _mass_update_worker(
+        self, port_name: str, file_path: str, ext: str, tool_type: str, expected_fw: str
+    ):
+        update_ok = False
+        fail_reason = ""
+        detected_fw = None
+        verified = False
+
+        try:
+            self.log("=" * 60)
+            self.log(
+                f"MASS UPDATE — {os.path.basename(file_path)} "
+                f"({ext.upper()}, Tool: {tool_type}, Port: {port_name})"
+            )
+            self.log("=" * 60)
+
+            # Stage 1 - auto-connect every 0.5 s ------------------------
+            self._push("onMassStage", "connecting")
+            connected = self._mass_connect_loop(port_name)
+            if not connected:
+                raise RuntimeError("Stopped by operator")
+
+            # Stage 2 - Target ACK polling (first byte must be 0x80) ---
+            self._push("onMassStage", "targeting")
+            acked = self._mass_target_ack_loop(tool_type)
+            if not acked:
+                raise RuntimeError("Stopped by operator")
+
+            # Stage 3 - programming (identical to the Update page) -----
+            self._push("onMassStage", "programming")
+            if ext == "bin":
+                self.log("\n🔄 Generating flashing script from BIN file...")
+                script_data = generate_and_save_bin_script(
+                    file_path, tool_type=tool_type, log_callback=self.log
+                )
+                if not script_data:
+                    raise RuntimeError("Failed to process BIN file / generate script")
+
+                self.log("\n🚀 Starting flashing sequence...")
+                update_ok = execute_bin_flashing_sequence(
+                    self.comm,
+                    script_data,
+                    log_callback=self.log,
+                    progress_callback=self._guarded_progress,
+                )
+                if not update_ok:
+                    fail_reason = "Flashing sequence failed"
+            else:
+                self.log("\n🔄 Processing CSV command filter...")
+                csv_cmds = get_commands_from_csv(
+                    file_path, prefix="74", log_callback=self.log
+                )
+                if not csv_cmds:
+                    raise RuntimeError("No valid commands found in CSV")
+
+                # Init commands: Target + Default METCO password
+                init_cmds = []
+                cmd1_base = "70 01 01 11" if tool_type == "M12" else "70 01 01 01"
+                init_cmds.append(build_frame(cmd1_base))
+
+                seq = SeqIdTracker(start=5)
+                init_cmds.append(
+                    build_frame(f"01 {seq.get_and_inc()} 0A 00 3B 33 33 33 33 33 33 33 33")
+                )
+
+                full_cmds = init_cmds + csv_cmds
+                self.log(
+                    f"📋 Sending {len(full_cmds)} commands "
+                    f"(2 init + {len(csv_cmds)} CSV commands)...",
+                )
+                update_ok = execute_command_list(
+                    self.comm,
+                    full_cmds,
+                    log_callback=self.log,
+                    progress_callback=self._guarded_progress,
+                )
+                if not update_ok:
+                    fail_reason = "CSV command execution failed"
+
+            # Stage 4 - required FW read-back & compare -----------------
+            if update_ok:
+                self._push("onMassStage", "verifying")
+                self.log(f"\n⏳ Waiting {FW_CHECK_DELAY_S:.0f} s before FW read...")
+                time.sleep(FW_CHECK_DELAY_S)
+
+                self.log("🔎 Reading firmware version for verification...")
+                check = self.verify_fw_version(expected_fw)
+                detected_fw = check.get("detected")
+                verified = bool(check.get("pass"))
+                if not verified:
+                    fail_reason = check.get("reason") or "FW verification failed"
+
+        except RuntimeError as e:  # aborted via Stop
+            update_ok = False
+            fail_reason = str(e)
+        except Exception as e:
+            update_ok = False
+            fail_reason = f"Unexpected error: {e}"
+
+        # PASS only when flashing succeeded AND the FW read-back matches
+        # the (required) user input. A mismatch or unreadable FW = FAIL.
+        overall_pass = update_ok and verified
+
+        if overall_pass:
+            self.log(f"\n🎉 === MASS UPDATE FINISHED: PASS === (FW {detected_fw})")
+        else:
+            self.log(f"\n🛑 === MASS UPDATE FINISHED: FAIL — {fail_reason} ===")
+
+        # Always disconnect so the next PCBA gets a fresh connection.
+        try:
+            if self.comm or self.is_connected:
+                self.disconnect_port()
+        except Exception as e:
+            self.log(f"⚠️ Disconnect error: {e}")
+
+        self.controller.reset()
+        self.mass_running = False
+        self._push("onMassStage", "done")
+        self._push(
+            "onMassFinished",
+            {
+                "pass": overall_pass,
+                "detected": detected_fw,
+                "expected": expected_fw,
+                "reason": "" if overall_pass else fail_reason,
+            },
+        )
+
+
 
     # ------------------------------------------------------------------
     # Run controls
