@@ -60,10 +60,10 @@ FW_CHECK_DELAY_S = 3.0
 FW_DATA_START = 3
 FW_DATA_LENGTH = 4
 
-# Mass update retries
-MASS_CONNECT_RETRY_S = 0.5  # auto-connect cadence
-MASS_TARGET_RETRY_S = 0.5  # Target-command re-send cadence
-TARGET_ACK_HEADER = 0x80  # expected first byte of a successful Target ACK
+# Continuous mass-update polling cadence and Target response headers.
+MASS_TARGET_RETRY_S = 0.5
+TARGET_ACK_HEADER = 0x80
+TARGET_UNPLUG_HEADERS = (0x82, 0x83)
 
 QUICK_COMMANDS = {
     "fw_version": "01 00 03 00 0D 04 00 15",
@@ -480,6 +480,9 @@ class JSAPI:
         if self.mass_running:
             return {"status": "ERROR", "message": "A mass update is already running"}
 
+        if not self.is_connected or not self.comm:
+            return {"status": "ERROR", "message": "Connect to the selected COM port before starting"}
+
         if not port or not str(port).strip():
             return {"status": "ERROR", "message": "No COM port selected"}
 
@@ -510,15 +513,170 @@ class JSAPI:
             }
 
         port_name = str(port).split(" - ")[0].strip()
+        if port_name != self.connected_port:
+            return {"status": "ERROR", "message": "Selected COM port is not connected"}
 
         self.controller.reset()
         self.mass_running = True
         threading.Thread(
-            target=self._mass_update_worker,
+            target=self._continuous_mass_update_worker,
             args=(port_name, file_path, ext, tool_type, expected_fw),
             daemon=True,
         ).start()
         return {"status": "STARTED"}
+
+    def _wait_for_target_header(
+        self, tool_type: str, expected_headers, stage: str,
+        poll_delay_s: float = MASS_TARGET_RETRY_S, consecutive_required: int = 1,
+    ) -> int:
+        """Poll Target until the requested header has passed its debounce check."""
+        target_base = "70 01 01 01" if tool_type == "M18" else "70 01 01 11"
+        target_frame = bytes.fromhex(build_frame(target_base))
+        sends = 0
+        consecutive_matches = 0
+        self._push("onMassStage", stage)
+
+        while not self.controller.stop_requested():
+            if not self.is_connected or not self.comm:
+                raise RuntimeError("Serial port disconnected")
+
+            cycle_start = time.monotonic()
+            sends += 1
+            command_runner.last_rx_frame = None
+            if not self.comm.send_no_wait(target_frame):
+                consecutive_matches = 0
+                self.log("Target send failed; unplug feedback counter reset.")
+                self._wait_with_cancel(poll_delay_s)
+                continue
+
+            received_expected_header = False
+            while time.monotonic() - cycle_start < poll_delay_s:
+                if self.controller.stop_requested():
+                    raise RuntimeError("Aborted by operator")
+                time.sleep(0.05)
+                print_queued_messages(self.log)
+                rx = command_runner.last_rx_frame
+                if rx:
+                    header = rx[0]
+                    self.log(f"[MCU RX]: {rx.hex(' ').upper()} (header {header:02X})")
+                    if header in expected_headers:
+                        consecutive_matches += 1
+                        received_expected_header = True
+                        if consecutive_matches >= consecutive_required:
+                            return header
+                        self.log(
+                            f"Target feedback {header:02X}: "
+                            f"{consecutive_matches}/{consecutive_required} consecutive."
+                        )
+                    else:
+                        consecutive_matches = 0
+                    break
+
+            if not received_expected_header:
+                consecutive_matches = 0
+
+            if sends == 1 or sends % 10 == 0:
+                wanted = "/".join(f"{value:02X}" for value in expected_headers)
+                self.log(f"Waiting for Target response {wanted}; sent {sends} command(s).")
+
+        raise RuntimeError("Aborted by operator")
+
+    def _wait_with_cancel(self, seconds: float):
+        """Cancellable delay used while the device reboots after flashing."""
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            self.controller.checkpoint()
+            time.sleep(min(0.1, deadline - time.monotonic()))
+
+    def _flash_and_verify_mass_target(self, file_path, ext, tool_type, expected_fw):
+        """Flash the currently selected target and return one PCBA result."""
+        try:
+            self._push("onMassStage", "programming")
+            if ext == "bin":
+                script_data = generate_and_save_bin_script(
+                    file_path, tool_type=tool_type, log_callback=self.log
+                )
+                if not script_data:
+                    return {"pass": False, "detected": None, "reason": "Failed to generate BIN flashing script"}
+                update_ok = execute_bin_flashing_sequence(
+                    self.comm, script_data, log_callback=self.log,
+                    progress_callback=self._guarded_progress,
+                )
+            else:
+                csv_cmds = get_commands_from_csv(file_path, prefix="74", log_callback=self.log)
+                if not csv_cmds:
+                    return {"pass": False, "detected": None, "reason": "No valid commands found in CSV"}
+                target_base = "70 01 01 11" if tool_type == "M12" else "70 01 01 01"
+                seq = SeqIdTracker(start=5)
+                init_cmds = [
+                    build_frame(target_base),
+                    build_frame(f"01 {seq.get_and_inc()} 0A 00 3B 33 33 33 33 33 33 33 33"),
+                ]
+                update_ok = execute_command_list(
+                    self.comm, init_cmds + csv_cmds, log_callback=self.log,
+                    progress_callback=self._guarded_progress,
+                )
+
+            if not update_ok:
+                return {"pass": False, "detected": None, "reason": "Flashing sequence failed"}
+
+            self._push("onMassStage", "verifying")
+            self._wait_with_cancel(FW_CHECK_DELAY_S)
+            check = self.verify_fw_version(expected_fw)
+            return {
+                "pass": bool(check.get("pass")),
+                "detected": check.get("detected"),
+                "reason": check.get("reason") or "FW verification failed",
+            }
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            return {"pass": False, "detected": None, "reason": f"Update error: {exc}"}
+
+    def _continuous_mass_update_worker(self, port_name, file_path, ext, tool_type, expected_fw):
+        """Run Target -> flash -> verify -> unplug -> next Target until stopped."""
+        terminal_reason = ""
+        try:
+            self.log(f"Continuous mass update started on {port_name}.")
+            while not self.controller.stop_requested():
+                self._wait_for_target_header(tool_type, (TARGET_ACK_HEADER,), "waiting_for_target")
+                self.log("Target acknowledged; starting flash and verification.")
+                result = self._flash_and_verify_mass_target(file_path, ext, tool_type, expected_fw)
+                self._push("onMassResult", {**result, "expected": expected_fw})
+                if result["pass"]:
+                    self.log(f"MASS UPDATE PASS: FW {result.get('detected') or '?'}")
+                else:
+                    self.log(f"MASS UPDATE FAIL: {result.get('reason') or 'unknown error'}")
+
+                # Do not flash the same PCBA again. Wait until it reports that
+                # it is complete/unplugged, then return to target discovery.
+                self._wait_for_target_header(
+                    tool_type,
+                    TARGET_UNPLUG_HEADERS,
+                    "waiting_for_unplug",
+                    poll_delay_s=1.0,
+                    consecutive_required=3,
+                )
+                self.log("Target removed or completed; waiting for next PCBA.")
+                self._push("onMassStage", "waiting_for_next_target")
+        except RuntimeError as exc:
+            terminal_reason = str(exc)
+        except Exception as exc:
+            terminal_reason = f"Unexpected mass update error: {exc}"
+        finally:
+            stopped = self.controller.stop_requested()
+            self.mass_running = False
+            self.controller.reset()
+            if terminal_reason and not stopped:
+                # A transport failure is terminal; reflect it in the UI rather
+                # than leaving a stale connected state after a cable/device loss.
+                self.disconnect_port()
+            self._push("onMassStage", "done")
+            self._push("onMassFinished", {"stopped": stopped, "reason": terminal_reason})
+            if stopped:
+                self.log("Continuous mass update stopped by operator.")
+            elif terminal_reason:
+                self.log(f"Continuous mass update ended: {terminal_reason}")
 
     def _mass_connect_loop(self, port_name: str) -> bool:
         """Retry connecting every 0.5 s until success / stop request."""
@@ -544,7 +702,7 @@ class JSAPI:
                 self.log(f"✅ Connected to {port_name} after {attempts} attempt(s).")
                 return True
 
-            time.sleep(MASS_CONNECT_RETRY_S)
+            time.sleep(MASS_TARGET_RETRY_S)
         return False
 
     def _mass_target_ack_loop(self, tool_type: str) -> bool:

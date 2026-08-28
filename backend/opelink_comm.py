@@ -117,12 +117,13 @@ class OpenLinkComm:
 
         frame = bytes(raw_bytes)
 
-        self.ser.write(frame)
-
-        if self.on_tx:
-            self.on_tx(frame)
-
-        return True
+        try:
+            self.ser.write(frame)
+            if self.on_tx:
+                self.on_tx(frame)
+            return True
+        except Exception:
+            return False
 
     def send_bytes(self, raw_bytes: bytes, timeout_ms: int = 10000) -> bool:
         if not self.ser or not self.ser.is_open:

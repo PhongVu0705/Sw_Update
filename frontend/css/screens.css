@@ -523,6 +523,36 @@ button:disabled {
   padding: 18px;
 }
 
+.last-update-card {
+  grid-column: 1 / -1;
+  min-height: 148px;
+  justify-content: center;
+  text-align: center;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.last-update-card .stat-icon {
+  width: 64px;
+  height: 64px;
+  font-size: 32px;
+}
+
+.last-update-card .stat-value {
+  margin: 8px 0 6px;
+  padding: 10px 30px;
+  font-size: 28px;
+}
+
+.last-update-card.pass {
+  background-color: #bbf7d0;
+  border-color: #22c55e;
+}
+
+.last-update-card.fail {
+  background-color: #fecaca;
+  border-color: #ef4444;
+}
+
 .stat-icon {
   display: flex;
   align-items: center;

@@ -2,13 +2,9 @@
    Software Update Tool — Mass Update screen (mass_update.js)
 
    Production-line flow:
-     press START -> the backend auto-connects the selected COM
-     port every 0.5 s, then sends the Target select command
-     (M12/M18) every 0.5 s until the response header byte is
-     0x80, flashes the firmware exactly like the Update page,
-     reads back the FW version and compares it with the
-     REQUIRED user input, disconnects the port and pops up a
-     result modal asking the operator to insert the next PCBA.
+     connect the selected COM port, then press START. The backend polls
+     Target every 0.5 s, flashes and verifies an acknowledged target, waits
+     for its 0x82/0x83 unplug response, and repeats for the next PCBA.
 
    Real mode  : talks to the Python backend through pywebview
                 (window.pywebview.api) + pushed events.
@@ -30,6 +26,7 @@
   const dropZone = $("drop-zone");
   const browseLabel = dropZone.querySelector(".browse-button");
   const refreshPortsButton = $("refresh-ports-button");
+  const connectButton = $("connect-button");
   const backButton = $("back-button");
   const comPort = $("com-port");
   const toolButtons = Array.from(document.querySelectorAll(".tool-btn"));
@@ -42,20 +39,21 @@
   // New stat cards (cumulative session counters)
   const rateValueEl = $("rate-value");
   const rateDetailEl = $("rate-detail");
-  const totalCountEl = $("total-count");
-  const totalSubEl = $("total-sub");
+  const lastUpdateCard = $("last-update-card");
+  const lastUpdateIcon = $("last-update-icon");
+  const lastUpdateStatus = $("last-update-status");
+  const lastUpdateDetail = $("last-update-detail");
+  const totalSubEl = lastUpdateDetail;
 
-  // Result modal
-  const resultOverlay = $("result-overlay");
-  const resultBadge = $("result-badge");
-  const resultDetected = $("result-detected");
-  const resultExpected = $("result-expected");
-  const resultTotal = $("result-total");
-  const resultReason = $("result-reason");
-  const resultOkButton = $("result-ok-button");
-  const resultCloseButton = resultOverlay
-    ? resultOverlay.querySelector("[data-close-result]")
-    : null;
+  // No result dialog is rendered on this screen.
+  const resultOverlay = null;
+  const resultBadge = null;
+  const resultDetected = null;
+  const resultExpected = null;
+  const resultTotal = null;
+  const resultReason = null;
+  const resultOkButton = null;
+  const resultCloseButton = null;
 
   const progressBarFill = $("progress-bar-fill");
   const progressPercentage = $("progress-percentage");
@@ -73,13 +71,21 @@
   const VERSION_RE = /^\d+(\.\d+){0,3}$/;
 
   const STAGE_LABELS = {
-    connecting: [
-      "Connecting to device",
-      "Auto-connecting every 0.5 s - plug in the PCBA...",
+    waiting_for_target: [
+      "Waiting for target",
+      "Sending Target every 0.5 s until header 0x80...",
+    ],
+    waiting_for_unplug: [
+      "Waiting for unplug",
+      "Sending Target every 1.0 s; need 5 consecutive 0x82/0x83 responses...",
+    ],
+    waiting_for_next_target: [
+      "Waiting for next target",
+      "Insert the next PCBA; polling Target every 0.5 s...",
     ],
     targeting: [
-      "Waiting for target ACK",
-      "Sending Target command every 0.5 s until header byte 0x80...",
+      "Waiting for target",
+      "Sending Target every 0.3 s until header 0x80...",
     ],
     programming: ["Programming MCU", ""],
     verifying: ["Verifying firmware", "Reading FW version and comparing..."],
@@ -122,7 +128,7 @@
     terminalLogs.scrollTop = terminalLogs.scrollHeight;
   }
 
-    function classifyLevel(message) {
+  function classifyLevel(message) {
     if (/SUCCESS|PASS\b|verified/i.test(message)) return "success";
     if (/ERROR|FAIL\b|Traceback|aborted|mismatch/i.test(message))
       return "error";
@@ -156,6 +162,8 @@
         ? `Connected: ${port}`
         : "System Connected"
       : "Not Connected";
+    connectButton.classList.toggle("is-connected", connected);
+    connectButton.textContent = connected ? "Disconnect" : "Connect";
   }
 
   function setFileInfo(file) {
@@ -174,8 +182,6 @@
 
   function refreshStatCards(res) {
     const total = completedCount();
-    totalCountEl.textContent = String(total);
-
     if (total === 0) {
       rateValueEl.textContent = "—";
       rateValueEl.className = "stat-value";
@@ -189,7 +195,17 @@
       rateDetailEl.textContent = `Passed ${state.passed} · Failed ${state.failed}`;
     }
 
-    // Last-result line under the TOTAL card
+    if (res) {
+      const passed = !!res.pass;
+      lastUpdateCard.classList.toggle("pass", passed);
+      lastUpdateCard.classList.toggle("fail", !passed);
+      lastUpdateIcon.className = `stat-icon ${passed ? "pass" : "fail"}`;
+      lastUpdateIcon.innerHTML = `<i class="bi bi-${passed ? "check-lg" : "x-lg"}"></i>`;
+      lastUpdateStatus.textContent = passed ? "PASS" : "FAIL";
+      lastUpdateStatus.className = `stat-value ${passed ? "pass" : "fail"}`;
+    }
+
+    // Last-result detail under the status card
     if (res) {
       const verdict = res.pass ? "PASS" : "FAIL";
       const detected = res.detected ?? "not readable";
@@ -205,9 +221,9 @@
     stopButton.disabled = false;
     comPort.disabled = true;
     refreshPortsButton.disabled = true;
+    connectButton.disabled = true;
     expectedFw.disabled = true;
     setProgress(0);
-    hideResultModal();
   }
 
   function endRunUI() {
@@ -216,14 +232,22 @@
     stopButton.disabled = true;
     comPort.disabled = false;
     refreshPortsButton.disabled = false;
+    connectButton.disabled = false;
     expectedFw.disabled = false;
-    setConnectedUI(false, null);
   }
 
   function validateInputs() {
     if (!comPort.value) {
       appendLog("warning", "Cannot start: no COM port selected.");
       comPort.focus();
+      return false;
+    }
+    if (!state.connected) {
+      appendLog(
+        "warning",
+        "Cannot start: connect to the selected COM port first.",
+      );
+      connectButton.focus();
       return false;
     }
     if (!state.file || (Bridge.available && !state.file.path)) {
@@ -257,7 +281,7 @@
     return true;
   }
 
-    /* ---------- Result modal ---------- */
+  /* ---------- Result modal ---------- */
 
   let lastFocusBeforeModal = null;
 
@@ -270,7 +294,9 @@
     resultDetected.textContent = res.detected ?? "Not readable";
     resultExpected.textContent = res.expected ?? "—";
     resultTotal.textContent = String(completedCount());
-    resultReason.textContent = ok ? "FW read matches expected version" : res.reason || "Unknown failure";
+    resultReason.textContent = ok
+      ? "FW read matches expected version"
+      : res.reason || "Unknown failure";
 
     lastFocusBeforeModal = document.activeElement;
     resultOverlay.hidden = false;
@@ -282,7 +308,10 @@
     if (!resultOverlay || resultOverlay.hidden) return;
     resultOverlay.hidden = true;
     document.body.style.overflow = "";
-    if (lastFocusBeforeModal && typeof lastFocusBeforeModal.focus === "function") {
+    if (
+      lastFocusBeforeModal &&
+      typeof lastFocusBeforeModal.focus === "function"
+    ) {
       lastFocusBeforeModal.focus();
     }
     lastFocusBeforeModal = null;
@@ -290,23 +319,33 @@
 
   /* ---------- Finish handling ---------- */
 
-  function handleMassFinished(res) {
-    endRunUI();
-
+  function recordMassResult(res) {
     if (res.pass) {
       state.passed += 1;
       setProgress(100);
-      appendLog("success", `=== MASS UPDATE FINISHED: PASS === FW ${res.detected ?? "?"}`);
+      appendLog(
+        "success",
+        `=== MASS UPDATE FINISHED: PASS === FW ${res.detected ?? "?"}`,
+      );
     } else {
       state.failed += 1;
-      appendLog("error", `=== MASS UPDATE FINISHED: FAIL - ${res.reason || "unknown"} ===`);
+      appendLog(
+        "error",
+        `=== MASS UPDATE FINISHED: FAIL - ${res.reason || "unknown"} ===`,
+      );
     }
 
     refreshStatCards(res);
-    showResultModal(res);
   }
 
-    /* ============================================================
+  function handleMassFinished(res) {
+    endRunUI();
+    if (res && res.reason && !res.stopped) {
+      appendLog("error", `Continuous update ended: ${res.reason}`);
+    }
+  }
+
+  /* ============================================================
      Backend (pywebview) mode
      ============================================================ */
 
@@ -385,10 +424,7 @@
           expectedFw.value.trim(),
         );
         if (!r || r.status !== "STARTED") {
-          appendLog(
-            "error",
-            (r && r.message) || "Failed to start mass update",
-          );
+          appendLog("error", (r && r.message) || "Failed to start mass update");
           endRunUI();
           return;
         }
@@ -402,7 +438,7 @@
     }
   }
 
-    /* ============================================================
+  /* ============================================================
      Simulation mode (plain browser fallback)
      Reproduces the production flow at the same 0.5 s cadence:
        auto-connect -> target ACK 0x80 -> flashing -> FW verify
@@ -417,11 +453,11 @@
 
   function simulateRun(portName) {
     const sim = {
-      stage: "connecting",
-      attempt: 0,
+      stage: "targeting",
       targetSends: 0,
       progress: 0,
       verified: false,
+      unplugSends: 0,
     };
     const expected = expectedFw.value.trim();
 
@@ -429,21 +465,12 @@
       "info",
       `[SIM] Starting simulated mass update of ${state.file.name} (${state.toolType}) on ${portName}...`,
     );
-    setStage("connecting");
+    setStage("targeting");
 
     const tick = () => {
       if (!state.running) return;
 
-      if (sim.stage === "connecting") {
-        sim.attempt += 1;
-        appendLog("info", `[SIM] Auto-connect attempt ${sim.attempt} on ${portName}...`);
-        if (sim.attempt >= 3) {
-          setConnectedUI(true, portName);
-          appendLog("success", `[SIM] Connected to ${portName}.`);
-          sim.stage = "targeting";
-          setStage("targeting");
-        }
-      } else if (sim.stage === "targeting") {
+      if (sim.stage === "targeting") {
         const cmd = state.toolType === "M18" ? "70 01 01 01" : "70 01 01 11";
         sim.targetSends += 1;
         if (sim.targetSends < 3) {
@@ -495,22 +522,37 @@
             ? `[SIM] FW read ${detected}, expected ${expected}`
             : `[SIM] FW read matches: ${detected}`,
         );
-        handleMassFinished({
+        recordMassResult({
           pass: !mismatch,
           detected: detected || null,
           expected,
           reason: mismatch ? "FW version mismatch" : "",
         });
-        return;
+        sim.stage = "waiting_for_unplug";
+        sim.unplugSends = 0;
+        setStage("waiting_for_unplug");
+      } else if (sim.stage === "waiting_for_unplug") {
+        sim.unplugSends += 1;
+        if (sim.unplugSends >= 5) {
+          appendLog("info", "[SIM] RX header 82 - target removed.");
+          sim.stage = "targeting";
+          sim.targetSends = 0;
+          sim.progress = 0;
+          sim.verified = false;
+          setStage("waiting_for_next_target");
+        }
       }
 
-      state.simTimerId = setTimeout(tick, 500);
+      state.simTimerId = setTimeout(
+        tick,
+        sim.stage === "waiting_for_unplug" ? 1000 : 500,
+      );
     };
 
     state.simTimerId = setTimeout(tick, 500);
   }
 
-    /* ============================================================
+  /* ============================================================
      Event wiring
      ============================================================ */
 
@@ -535,11 +577,42 @@
 
   Bridge.on("onMassStage", (stage) => setStage(String(stage || "")));
 
+  Bridge.on("onMassResult", (res) => recordMassResult(res || {}));
   Bridge.on("onMassFinished", (res) => handleMassFinished(res || {}));
 
   // ---- Static DOM events ----
 
   function wireStaticEvents() {
+    // Explicit connection: the continuous update worker only uses this port.
+    connectButton.addEventListener("click", async () => {
+      if (state.running) return;
+      if (!comPort.value) {
+        appendLog("warning", "Cannot connect: no COM port selected.");
+        comPort.focus();
+        return;
+      }
+      connectButton.disabled = true;
+      try {
+        if (Bridge.available) {
+          const r = state.connected
+            ? await Bridge.api.disconnect_port()
+            : await Bridge.api.connect_port(comPort.value);
+          if (r.status !== "SUCCESS")
+            appendLog("error", r.message || "Connection failed");
+        } else {
+          setConnectedUI(!state.connected, comPort.value);
+          appendLog(
+            "info",
+            `[SIM] ${state.connected ? "Connected" : "Disconnected"} ${comPort.value}`,
+          );
+        }
+      } catch (err) {
+        appendLog("error", `Connection error: ${err.message}`);
+      } finally {
+        connectButton.disabled = false;
+      }
+    });
+
     // Refresh COM port list
     refreshPortsButton.addEventListener("click", async () => {
       refreshPortsButton.disabled = true;
@@ -585,7 +658,7 @@
       setFileInfo({ path: null, name: file.name, size: file.size, ext });
     });
 
-        // Drag & drop
+    // Drag & drop
     ["dragenter", "dragover"].forEach((eventName) =>
       dropZone.addEventListener(eventName, (event) => {
         event.preventDefault();
@@ -618,7 +691,7 @@
       onStart();
     });
 
-        // Stop (shared RunController with the backend)
+    // Stop (shared RunController with the backend)
     stopButton.addEventListener("click", async () => {
       if (!state.running) return;
 
@@ -634,12 +707,7 @@
       } else {
         stopSim();
         appendLog("error", "[SIM] Mass update aborted by operator.");
-        handleMassFinished({
-          pass: false,
-          detected: null,
-          expected: expectedFw.value.trim() || null,
-          reason: "Stopped by operator",
-        });
+        handleMassFinished({ stopped: true, reason: "Stopped by operator" });
       }
     });
 
@@ -648,24 +716,7 @@
       terminalLogs.replaceChildren();
     });
 
-        // Result modal ("Insert next PCBA")
-    if (resultOkButton) {
-      resultOkButton.addEventListener("click", hideResultModal);
-    }
-    if (resultCloseButton) {
-      resultCloseButton.addEventListener("click", hideResultModal);
-    }
-    if (resultOverlay) {
-      resultOverlay.addEventListener("click", (event) => {
-        if (event.target === resultOverlay) hideResultModal();
-      });
-    }
-
-    document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") hideResultModal();
-    });
-
-        // Back button ("Main Menu"): abort and disconnect before leaving.
+    // Back button ("Main Menu"): abort and disconnect before leaving.
     backButton.addEventListener("click", async (event) => {
       if (!state.running && !state.connected) return;
 
@@ -674,7 +725,10 @@
       try {
         if (Bridge.available) {
           if (state.running) {
-            appendLog("warning", "Mass update aborted - returning to Main Menu...");
+            appendLog(
+              "warning",
+              "Mass update aborted - returning to Main Menu...",
+            );
             await Bridge.api.stop_update();
           }
           await Bridge.api.disconnect_port();
@@ -726,13 +780,4 @@
       setConnectedUI(false, null);
     }
   })();
-
-
-
-
-
-
-
-
-
 })();
