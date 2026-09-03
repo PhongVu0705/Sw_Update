@@ -10,12 +10,6 @@ and exposes a JavaScript API (window.pywebview.api.*) for:
   - Manual hex commands and quick commands
 """
 
-import sys
-from pathlib import Path
-
-# Thêm thư mục backend vào sys.path để Python có thể tìm thấy các module bên trong
-sys.path.append(str(Path(__file__).resolve().parent / "backend"))
-
 import json
 import os
 import re
