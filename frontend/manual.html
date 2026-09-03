@@ -29,7 +29,7 @@
           </a>
           <div class="title-group">
             <h1 class="app-title">Manual Command Send</h1>
-            <p class="app-subtitle">Software Update Tool v1.0.0</p>
+            <!-- <p class="app-subtitle">Software Update Tool v1.0.0</p> -->
           </div>
         </div>
         <div
@@ -42,7 +42,7 @@
         </div>
       </header>
 
-      <div class="main-body stacked">
+      <div class="main-body halves">
         <section class="left-pane" aria-label="Command console controls">
           <form class="panel control-panel" id="command-form" novalidate>
             <div class="connection-row">
@@ -56,7 +56,9 @@
                   name="com-port"
                   required
                 >
-                  <option value="" selected disabled>Loading COM ports...</option>
+                  <option value="" selected disabled>
+                    Loading COM ports...
+                  </option>
                 </select>
               </div>
               <button
@@ -80,7 +82,7 @@
               class="command-input"
               id="command-input"
               type="text"
-              placeholder="Enter command, e.g. READ FW VERSION"
+              placeholder="Enter command"
               autocomplete="off"
               spellcheck="false"
             />

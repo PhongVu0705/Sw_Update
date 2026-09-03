@@ -17,7 +17,7 @@
         '<span class="avatar-name">Create by Grey Le Phong Vu</span>' +
         "</div>" +
         "<p>The <strong>Software Update Tool</strong> simplifies firmware deployment and updates across target devices.</p>" +
-        "<p>Version 1.0.0.</p>",
+        "<p>Version 1.1.0.</p>",
     },
   };
 
