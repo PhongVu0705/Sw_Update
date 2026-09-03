@@ -528,7 +528,9 @@ button:disabled {
   min-height: 148px;
   justify-content: center;
   text-align: center;
-  transition: background-color 160ms ease, border-color 160ms ease;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease;
 }
 
 .last-update-card .stat-icon {
@@ -1305,4 +1307,3 @@ button:disabled {
 .next-pcba-text i {
   font-size: 20px;
 }
-
