@@ -142,6 +142,9 @@
     file: null, // { path, name, size, ext } | browser File wrapper
     toolType: "M12",
     running: false,
+    // UI lock state (password protected — see "UI Lock / Unlock" section)
+    isMassPageLocked: false,
+    lockPassword: null,
     // Cumulative session counters (persist across PCBAs)
     passed: 0,
     failed: 0,
@@ -328,6 +331,162 @@
     );
   }
 
+  /* ============================================================
+     UI Lock / Unlock (password protected)
+     Clicking the "Mass Update" header title toggles the lock:
+       unlocked -> "Set Lock Password" modal, then lock the page
+       locked   -> "Enter Password to Unlock" modal
+     While locked every interactive control is disabled EXCEPT the
+     Start and Stop buttons.
+     ============================================================ */
+
+  const lockToggle = $("lock-toggle");
+  const lockIcon = $("lock-icon");
+  const setLockModal = $("set-lock-modal");
+  const setLockForm = $("set-lock-form");
+  const setLockPassword = $("set-lock-password");
+  const setLockConfirm = $("set-lock-confirm");
+  const setLockError = $("set-lock-error");
+  const unlockModal = $("unlock-modal");
+  const unlockForm = $("unlock-form");
+  const unlockPassword = $("unlock-password");
+  const unlockError = $("unlock-error");
+
+  // Form controls that receive the `disabled` attribute while locked.
+  // Start/Stop buttons are intentionally NOT in this list.
+  const lockableControls = [
+    comPort,
+    refreshPortsButton,
+    connectButton,
+    expectedFw,
+    fileInput,
+    clearLogsButton,
+    ...toolButtons,
+  ];
+
+  // Interactive elements that cannot take `disabled` (browse label,
+  // back-button anchor, drop zone): dimmed + click-through via CSS.
+  const lockableZones = [dropZone, browseLabel, backButton];
+
+  let activeLockModal = null;
+  let lastFocusBeforeLockModal = null;
+
+  function showLockError(errorEl, message) {
+    errorEl.textContent = message;
+    errorEl.hidden = false;
+  }
+
+  function clearLockError(errorEl) {
+    errorEl.textContent = "";
+    errorEl.hidden = true;
+  }
+
+  function openLockModal(modal, firstField) {
+    lastFocusBeforeLockModal = document.activeElement;
+    modal.hidden = false;
+    document.body.style.overflow = "hidden";
+    activeLockModal = modal;
+    firstField.focus();
+  }
+
+  function closeLockModal(modal) {
+    if (!modal || modal.hidden) return;
+    modal.hidden = true;
+    if (activeLockModal === modal) activeLockModal = null;
+    document.body.style.overflow = "";
+    clearLockError(setLockError);
+    clearLockError(unlockError);
+    setLockForm.reset();
+    unlockForm.reset();
+    if (
+      lastFocusBeforeLockModal &&
+      typeof lastFocusBeforeLockModal.focus === "function"
+    ) {
+      lastFocusBeforeLockModal.focus();
+    }
+    lastFocusBeforeLockModal = null;
+  }
+
+  // Header icon: open padlock when unlocked, warning padlock when locked.
+  function updateLockToggleUI() {
+    const locked = state.isMassPageLocked;
+    lockToggle.setAttribute("aria-pressed", String(locked));
+    lockToggle.title = locked
+      ? "Page locked — click to unlock (password required)"
+      : "Click to lock the page controls with a password";
+    lockToggle.classList.toggle("is-locked", locked);
+    lockIcon.className = locked
+      ? "bi bi-lock-fill text-warning lock-icon"
+      : "bi bi-unlock lock-icon";
+  }
+
+  // Applies / releases the lock restrictions on every control except
+  // Start and Stop. Safe to call at any time — while a run is active the
+  // run-control functions own those controls, so unlocking mid-run does
+  // not re-enable them (endRunUI() calls this again when the run ends).
+  function applyLockState() {
+    const locked = state.isMassPageLocked;
+
+    lockableControls.forEach((el) => {
+      if (!el) return;
+      if (locked) {
+        el.disabled = true;
+      } else if (!state.running) {
+        el.disabled = false;
+      }
+    });
+
+    lockableZones.forEach((el) => {
+      if (!el) return;
+      el.classList.toggle("ui-locked", locked);
+    });
+
+    // The back button is a plain anchor: take it out of the tab order
+    // while locked (its click handler blocks activation as well).
+    if (locked) {
+      backButton.setAttribute("tabindex", "-1");
+      backButton.setAttribute("aria-disabled", "true");
+    } else {
+      backButton.removeAttribute("tabindex");
+      backButton.removeAttribute("aria-disabled");
+    }
+
+    document.body.classList.toggle("mass-page-locked", locked);
+    updateLockToggleUI();
+  }
+
+  // Central lock state change: apply restrictions + inform the operator.
+  function setLocked(locked) {
+    state.isMassPageLocked = locked;
+    applyLockState();
+    appendLog(
+      "info",
+      locked
+        ? "Page locked — controls are disabled (Start/Stop stay active). Click the 'Mass Update' title and enter the password to unlock."
+        : "Page unlocked — all controls restored.",
+    );
+  }
+
+  // First click on the title (page unlocked): ask for a lock password,
+  // then lock the page once it is entered and confirmed.
+  function requestLock() {
+    openLockModal(setLockModal, setLockPassword);
+  }
+
+  // Click on the title while locked: ask for the password to unlock.
+  function requestUnlock() {
+    openLockModal(unlockModal, unlockPassword);
+  }
+
+  function onLockToggleActivated() {
+    if (activeLockModal) return; // a lock dialog is already open
+    if (state.isMassPageLocked) {
+      requestUnlock();
+    } else {
+      requestLock();
+    }
+  }
+
   /* ---------- Run control UI ---------- */
 
   function beginRun() {
@@ -354,6 +513,8 @@
     refreshPortsButton.disabled = false;
     connectButton.disabled = false;
     expectedFw.disabled = false;
+    // Re-apply the UI lock so run-driven re-enabling never overrides it.
+    applyLockState();
     refreshNextStep();
   }
 
@@ -897,6 +1058,11 @@
 
     // Back button ("Main Menu"): abort and disconnect before leaving.
     backButton.addEventListener("click", async (event) => {
+      if (state.isMassPageLocked) {
+        // Page is locked: navigation stays blocked until it is unlocked.
+        event.preventDefault();
+        return;
+      }
       if (!state.running && !state.connected) return;
 
       event.preventDefault();
@@ -920,12 +1086,98 @@
         window.location.href = backButton.href;
       }
     });
+
+    // ---- UI lock / unlock ----
+
+    // The header title acts as the lock toggle (mouse + keyboard).
+    lockToggle.addEventListener("click", onLockToggleActivated);
+    lockToggle.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        onLockToggleActivated();
+      }
+    });
+
+    // "Set Lock Password" modal: validate, remember, then lock the page.
+    setLockForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const password = setLockPassword.value;
+      const confirm = setLockConfirm.value;
+
+      if (!password) {
+        showLockError(setLockError, "Please enter a password.");
+        setLockPassword.focus();
+        return;
+      }
+      if (password !== confirm) {
+        showLockError(setLockError, "Passwords do not match — try again.");
+        setLockConfirm.focus();
+        return;
+      }
+
+      state.lockPassword = password;
+      closeLockModal(setLockModal);
+      setLocked(true);
+    });
+
+    // "Enter Password to Unlock" modal: verify, then unlock or show the
+    // inline error.
+    unlockForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (unlockPassword.value === state.lockPassword) {
+        closeLockModal(unlockModal);
+        setLocked(false);
+      } else {
+        showLockError(unlockError, "Incorrect password");
+        unlockPassword.select();
+      }
+    });
+
+    // Close lock dialogs via the X / Cancel buttons and the backdrop.
+    [setLockModal, unlockModal].forEach((modal) => {
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) closeLockModal(modal);
+      });
+      modal.querySelectorAll("[data-close-lock-modal]").forEach((button) =>
+        button.addEventListener("click", () => closeLockModal(modal)),
+      );
+    });
+
+    // Escape closes whichever lock dialog is open.
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && activeLockModal) {
+        closeLockModal(activeLockModal);
+      }
+    });
+
+    // Basic focus trap inside the open lock dialog.
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Tab" || !activeLockModal) return;
+      const dialog = activeLockModal.querySelector(".modal");
+      const focusable = dialog.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
   }
 
   /* ---------- Boot ---------- */
 
   (async function boot() {
     wireStaticEvents();
+
+    // The lock is intentionally per-visit (in-memory only): leaving the
+    // page via Main Menu — or reloading — always starts unlocked again.
+    applyLockState(); // normalise the header icon / tooltip to that state
 
     const live = await Bridge.init();
     if (live) {

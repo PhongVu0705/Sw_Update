@@ -1427,3 +1427,153 @@ button:disabled {
     animation: none;
   }
 }
+
+/* ============================================================
+   UI Lock / Unlock (Mass Update)
+   The "Mass Update" header title is a lock toggle: unlocked it
+   shows bi-unlock, locked it shows bi-lock-fill text-warning.
+   ============================================================ */
+
+/* ---------- Clickable header title (lock toggle) ---------- */
+
+.app-title.lock-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: -4px -8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 150ms ease;
+}
+
+.app-title.lock-toggle:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+.app-title.lock-toggle:focus-visible {
+  outline: 3px solid #111827;
+  outline-offset: 2px;
+}
+
+.app-title.lock-toggle .lock-icon {
+  font-size: 0.78em;
+}
+
+/* Warning colour for the locked padlock (bi bi-lock-fill text-warning) */
+.app-title.lock-toggle .lock-icon.text-warning {
+  color: #ffc107;
+}
+
+/* ---------- Locked page restrictions ---------- */
+
+/* Dim non-button controls that have no dedicated :disabled style */
+.mass-page-locked input:disabled,
+.mass-page-locked select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Elements that cannot take the disabled attribute
+   (browse label, back button, drop zone) */
+.ui-locked {
+  opacity: 0.45;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+/* ---------- Lock password modals ---------- */
+
+.lock-modal {
+  max-width: 420px;
+}
+
+.lock-modal .modal-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.lock-modal-hint {
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  color: #6b7280;
+}
+
+.lock-field-label {
+  margin: 10px 0 6px;
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #374151;
+}
+
+.modal-error {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  background-color: #fef2f2;
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.modal-error[hidden] {
+  display: none;
+}
+
+.lock-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px;
+  border-top: 1px solid #e5e7eb;
+  background-color: #f9fafb;
+}
+
+.lock-btn-secondary,
+.lock-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+.lock-btn-secondary {
+  border: 1px solid #d1d5db;
+  background-color: #ffffff;
+  color: #111827;
+}
+
+.lock-btn-secondary:hover {
+  border-color: #111827;
+  background-color: #f9fafb;
+}
+
+.lock-btn-primary {
+  border: 1px solid #d01b2e;
+  background-color: #d01b2e;
+  color: #ffffff;
+}
+
+.lock-btn-primary:hover {
+  border-color: #b31726;
+  background-color: #b31726;
+}
+
+.lock-btn-secondary:focus-visible,
+.lock-btn-primary:focus-visible {
+  outline: 2px solid #111827;
+  outline-offset: 2px;
+}
