@@ -29,7 +29,7 @@
         "<span>Software Hub Version</span>" +
         "</div>" +
         // Default badge; a launcher/backend integration may overwrite this.
-        '<span class="about-version-badge" id="settingsLauncherVersion">1.1.0</span>' +
+        '<span class="about-version-badge" id="settingsLauncherVersion">1.2.0</span>' +
         "</div>",
     },
   };
