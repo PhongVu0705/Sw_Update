@@ -10,14 +10,27 @@
 
   var ACTIONS = {
     about: {
-      title: "About this software",
+      title: "About",
+      titleIcon: "bi-file-earmark-person",
       body:
-        '<div class="modal-avatar">' +
-        '<img class="avatar-image" src="img/images.jpg" alt="Avatar of Grey Le Phong Vu" />' +
-        '<span class="avatar-name">Made by Grey Le Phong Vu</span>' +
+        '<div class="about-creator">' +
+        '<span class="about-avatar">' +
+        '<img src="img/images.jpg" alt="Avatar of Grey Le Phong Vu" />' +
+        "</span>" +
+        '<div class="about-creator-info">' +
+        '<span class="about-creator-label">Creator</span>' +
+        '<span class="about-creator-name">Grey Le Phong Vu</span>' +
         "</div>" +
-        // "<p>The <strong>Software Update Tool</strong> simplifies firmware deployment and updates across target devices.</p>" +
-        '<p class="modal-version">Version 1.1.0.</p>',
+        "</div>" +
+        '<hr class="about-divider" />' +
+        '<div class="about-version-card">' +
+        '<div class="about-version-label">' +
+        '<i class="bi bi-info-circle-fill" aria-hidden="true"></i>' +
+        "<span>Software Hub Version</span>" +
+        "</div>" +
+        // Default badge; a launcher/backend integration may overwrite this.
+        '<span class="about-version-badge" id="settingsLauncherVersion">1.1.0</span>' +
+        "</div>",
     },
   };
 
@@ -42,7 +55,18 @@
     }
 
     lastFocusedElement = document.activeElement;
-    titleEl.textContent = content.title;
+    if (content.titleIcon) {
+      // Render "icon + title" in the dialog header.
+      titleEl.classList.add("has-icon");
+      titleEl.innerHTML =
+        '<i class="bi ' + content.titleIcon + '" aria-hidden="true"></i>';
+      var titleLabel = document.createElement("span");
+      titleLabel.textContent = content.title;
+      titleEl.appendChild(titleLabel);
+    } else {
+      titleEl.textContent = content.title;
+      titleEl.classList.remove("has-icon");
+    }
     bodyEl.innerHTML = content.body;
 
     overlay.hidden = false;
@@ -77,9 +101,14 @@
     });
   });
 
-  // Close button
-  if (closeButton) {
-    closeButton.addEventListener("click", closeModal);
+  // Close buttons (header "X" and footer "Close")
+  if (overlay) {
+    Array.prototype.forEach.call(
+      overlay.querySelectorAll("[data-close-modal]"),
+      function (button) {
+        button.addEventListener("click", closeModal);
+      },
+    );
   }
 
   // Click on the dark backdrop (but not inside the dialog)

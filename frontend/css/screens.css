@@ -523,26 +523,16 @@ button:disabled {
   padding: 18px;
 }
 
+/* Compact: sits beside the pass-rate card in the same grid row */
 .last-update-card {
-  grid-column: 1 / -1;
-  min-height: 148px;
-  justify-content: center;
-  text-align: center;
   transition:
     background-color 160ms ease,
     border-color 160ms ease;
 }
 
-.last-update-card .stat-icon {
-  width: 64px;
-  height: 64px;
-  font-size: 32px;
-}
-
 .last-update-card .stat-value {
-  margin: 8px 0 6px;
-  padding: 10px 30px;
-  font-size: 28px;
+  margin: 8px 0 4px;
+  padding: 5px 12px;
 }
 
 .last-update-card.pass {
@@ -826,7 +816,8 @@ button:disabled {
 }
 
 .speed-info {
-  margin: 0;
+  /* margin: 0; */
+  margin-top: 5px;
   font-family: "Inter-Regular", Helvetica, Arial, sans-serif;
   font-size: 12px;
   color: #6b7280;
@@ -1306,4 +1297,133 @@ button:disabled {
 
 .next-pcba-text i {
   font-size: 20px;
+}
+
+/* ---------- Next-step guidance card (Mass Update) ---------- */
+
+.next-step-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #c7d2fe;
+  border-left: 4px solid #4f46e5;
+  border-radius: 12px;
+  background-color: #eef2ff;
+}
+
+.next-step-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-size: 16px;
+  flex-shrink: 0;
+  background-color: rgba(79, 70, 229, 0.15);
+  color: #4f46e5;
+}
+
+.next-step-body {
+  min-width: 0;
+}
+
+.next-step-title {
+  margin: 0;
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #3730a3;
+}
+
+.next-step-text {
+  margin: 3px 0 0;
+  font-family: "Inter-Regular", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #4b5563;
+}
+
+.next-step-card.success {
+  background-color: #f0fdf4;
+  border-color: #86efac;
+  border-left-color: #22c55e;
+}
+
+.next-step-card.success .next-step-icon {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+.next-step-card.success .next-step-title {
+  color: #15803d;
+}
+
+.next-step-card.warning {
+  background-color: #fffbeb;
+  border-color: #fcd34d;
+  border-left-color: #f59e0b;
+}
+
+.next-step-card.warning .next-step-icon {
+  background-color: #fef3c7;
+  color: #b45309;
+}
+
+.next-step-card.warning .next-step-title {
+  color: #b45309;
+}
+
+.next-step-card.danger {
+  background-color: #fef2f2;
+  border-color: #fca5a5;
+  border-left-color: #ef4444;
+}
+
+.next-step-card.danger .next-step-icon {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.next-step-card.danger .next-step-title {
+  color: #b91c1c;
+}
+
+.next-step-card.running {
+  background-color: #eff6ff;
+  border-color: #93c5fd;
+  border-left-color: #2563eb;
+}
+
+.next-step-card.running .next-step-icon {
+  background-color: #dbeafe;
+  color: #1d4ed8;
+}
+
+.next-step-card.running .next-step-title {
+  color: #1d4ed8;
+}
+
+.next-step-card.running .next-step-icon i {
+  animation: next-step-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes next-step-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .next-step-card.running .next-step-icon i {
+    animation: none;
+  }
 }

@@ -56,7 +56,9 @@
                   name="com-port"
                   required
                 >
-                  <option value="" selected disabled>Loading COM ports...</option>
+                  <option value="" selected disabled>
+                    Loading COM ports...
+                  </option>
                 </select>
               </div>
               <button
@@ -96,10 +98,17 @@
             <h2 class="section-title">Select Firmware File</h2>
 
             <div class="drop-zone" id="drop-zone">
-              <i class="bi bi-file-earmark-binary file-icon" aria-hidden="true"></i>
+              <i
+                class="bi bi-file-earmark-binary file-icon"
+                aria-hidden="true"
+              ></i>
               <div class="file-info">
-                <span class="file-path" id="firmware-file-label">No file selected</span>
-                <span class="file-meta" id="firmware-file-meta">Drag &amp; drop a .bin or .csv file here, or browse</span>
+                <span class="file-path" id="firmware-file-label"
+                  >No file selected</span
+                >
+                <span class="file-meta" id="firmware-file-meta"
+                  >Drag &amp; drop a .bin or .csv file here, or browse</span
+                >
               </div>
               <input
                 id="firmware-file"
@@ -116,7 +125,9 @@
             <h2 class="section-title">
               Fw version check <span class="required-mark">*</span>
             </h2>
-            <label class="visually-hidden" for="expected-fw">Expected firmware version in decimal (required)</label>
+            <label class="visually-hidden" for="expected-fw"
+              >Expected firmware version in decimal (required)</label
+            >
             <input
               class="command-input"
               id="expected-fw"
@@ -129,10 +140,18 @@
             />
 
             <div class="action-buttons" aria-label="Mass update controls">
-              <button class="btn-start" type="submit" id="start-button">Start</button>
-              <button class="btn-secondary" type="button" id="stop-button" disabled>Stop</button>
+              <button class="btn-start" type="submit" id="start-button">
+                Start
+              </button>
+              <button
+                class="btn-secondary"
+                type="button"
+                id="stop-button"
+                disabled
+              >
+                Stop
+              </button>
             </div>
-
           </form>
 
           <section class="status-cards-row" aria-label="Mass update results">
@@ -143,20 +162,54 @@
               <div>
                 <p class="stat-label">PASS / FAIL RATE</p>
                 <strong class="stat-value" id="rate-value">&mdash;</strong>
-                <p class="stat-sub" id="rate-detail">Passed 0 &middot; Failed 0</p>
+                <p class="stat-sub" id="rate-detail">
+                  Passed 0 &middot; Failed 0
+                </p>
               </div>
             </article>
-            <article class="panel stat-card last-update-card" id="last-update-card" aria-live="polite">
-              <span class="stat-icon info" id="last-update-icon" aria-hidden="true">
+            <article
+              class="panel stat-card last-update-card"
+              id="last-update-card"
+              aria-live="polite"
+            >
+              <span
+                class="stat-icon info"
+                id="last-update-icon"
+                aria-hidden="true"
+              >
                 <i class="bi bi-clock-history"></i>
               </span>
               <div>
                 <p class="stat-label">LAST UPDATE</p>
-                <strong class="stat-value" id="last-update-status">WAITING</strong>
-                <p class="stat-sub" id="last-update-detail">No PCBA updated this session</p>
+                <strong class="stat-value" id="last-update-status"
+                  >WAITING</strong
+                >
+                <p class="stat-sub" id="last-update-detail">
+                  No PCBA updated this session
+                </p>
               </div>
             </article>
           </section>
+
+          <article
+            class="panel next-step-card info"
+            id="next-step-card"
+            role="status"
+            aria-live="polite"
+            aria-label="Next step guidance"
+          >
+            <span class="next-step-icon" id="next-step-icon" aria-hidden="true">
+              <i class="bi bi-info-circle-fill"></i>
+            </span>
+            <div class="next-step-body">
+              <p class="next-step-title" id="next-step-title">
+                Step 1 &mdash; Connect
+              </p>
+              <p class="next-step-text" id="next-step-text">
+                Select the COM port in the list, then press Connect.
+              </p>
+            </div>
+          </article>
         </section>
 
         <section class="right-pane" aria-labelledby="terminal-title">
@@ -182,10 +235,14 @@
         <section class="progress-section" aria-labelledby="progress-label">
           <div class="progress-head">
             <div>
-              <h2 class="progress-label" id="progress-label">Waiting for start</h2>
+              <h2 class="progress-label" id="progress-label">
+                Waiting for start
+              </h2>
               <p class="speed-info" id="speed-info"></p>
             </div>
-            <output class="progress-percentage" id="progress-percentage">0%</output>
+            <output class="progress-percentage" id="progress-percentage"
+              >0%</output
+            >
           </div>
           <div
             class="progress-track"

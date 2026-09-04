@@ -309,28 +309,130 @@
   color: #374151;
 }
 
-.modal-avatar {
-  display: flex;
-  flex-direction: column;
+/* Title with leading icon (About modal) */
+
+.modal-title.has-icon {
+  display: inline-flex;
   align-items: center;
   gap: 10px;
-  margin: 0 auto 20px;
 }
 
-.avatar-image {
-  width: 88px;
-  height: 88px;
+.modal-title.has-icon i {
+  color: #d01b2e;
+  font-size: 22px;
+}
+
+/* ---------- About modal — creator row ---------- */
+
+.about-creator {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.about-avatar {
+  display: flex;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
   border-radius: 50%;
-  object-fit: cover;
+  overflow: hidden;
   border: 3px solid #d01b2e;
   box-shadow: 0 2px 8px rgba(208, 27, 46, 0.25);
 }
 
-.avatar-name {
+.about-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.about-creator-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.about-creator-label {
   font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
   font-weight: 700;
-  font-size: 15px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.about-creator-name {
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  font-size: 19px;
+  line-height: 1.3;
+  color: #d01b2e;
+}
+
+/* Gradient text where supported; solid brand color otherwise */
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+  .about-creator-name {
+    background: linear-gradient(90deg, #d01b2e 0%, #111827 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}
+
+.about-creator-role {
+  font-family: "Inter-Regular", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.about-divider {
+  margin: 18px 0;
+  border: none;
+  border-top: 1px solid rgba(17, 24, 39, 0.12);
+}
+
+/* ---------- About modal — version card ---------- */
+
+.about-version-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background-color: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+}
+
+.about-version-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  font-size: 14px;
   color: #111827;
+}
+
+.about-version-label i {
+  color: #d01b2e;
+  font-size: 16px;
+}
+
+.about-version-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background-color: rgba(208, 27, 46, 0.1);
+  color: #d01b2e;
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .modal-body p {
@@ -341,11 +443,41 @@
   margin-bottom: 0;
 }
 
-.modal-version {
-  text-align: center;
-  font-weight: 500;
-  margin-top: 10px;
+/* ---------- Modal footer ---------- */
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px;
+  border-top: 1px solid #e5e7eb;
 }
+
+.modal-button {
+  padding: 10px 20px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #111827;
+  font-family: "Inter-Bold", Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+.modal-button:hover {
+  border-color: #111827;
+  background-color: #f9fafb;
+}
+
+.modal-button:focus-visible {
+  outline: 2px solid #111827;
+  outline-offset: 2px;
+}
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 900px) {

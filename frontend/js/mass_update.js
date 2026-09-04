@@ -45,6 +45,12 @@
   const lastUpdateDetail = $("last-update-detail");
   const totalSubEl = lastUpdateDetail;
 
+  // Next-step guidance card
+  const nextStepCard = $("next-step-card");
+  const nextStepIcon = $("next-step-icon");
+  const nextStepTitle = $("next-step-title");
+  const nextStepText = $("next-step-text");
+
   // No result dialog is rendered on this screen.
   const resultOverlay = null;
   const resultBadge = null;
@@ -90,6 +96,45 @@
     programming: ["Programming MCU", ""],
     verifying: ["Verifying firmware", "Reading FW version and comparing..."],
     done: ["Finished", ""],
+  };
+
+  // Operator guidance shown in the next-step card for each run stage.
+  const NEXT_STEP_BY_STAGE = {
+    waiting_for_target: [
+      "running",
+      "Insert a PCBA",
+      "Place a PCBA into the fixture — polling Target every 0.5 s.",
+    ],
+    targeting: [
+      "running",
+      "Insert the first PCBA",
+      "Place a PCBA into the fixture to begin the batch.",
+    ],
+    programming: [
+      "running",
+      "Flashing in progress",
+      "Writing firmware — do not remove the PCBA until verification.",
+    ],
+    verifying: [
+      "running",
+      "Verifying firmware",
+      "Reading the FW version — keep the PCBA seated.",
+    ],
+    waiting_for_unplug: [
+      "warning",
+      "Remove the PCBA",
+      "Flash complete — unplug the PCBA so the next cycle can start.",
+    ],
+    waiting_for_next_target: [
+      "success",
+      "Insert the next PCBA",
+      "PCBA finished — place the next one to continue the batch.",
+    ],
+    done: [
+      "success",
+      "Batch finished",
+      "Mass update ended — check the pass/fail results above.",
+    ],
   };
 
   const state = {
@@ -152,6 +197,10 @@
     const [label, hint] = STAGE_LABELS[stage] || ["Working", ""];
     progressLabel.textContent = label;
     speedInfo.textContent = hint;
+
+    // Mirror the stage in the next-step guidance card.
+    const step = NEXT_STEP_BY_STAGE[stage];
+    if (step) setNextStep(step[0], step[1], step[2]);
   }
 
   function setConnectedUI(connected, port) {
@@ -164,6 +213,7 @@
       : "Not Connected";
     connectButton.classList.toggle("is-connected", connected);
     connectButton.textContent = connected ? "Disconnect" : "Connect";
+    refreshNextStep();
   }
 
   function setFileInfo(file) {
@@ -172,6 +222,7 @@
     fileMeta.textContent = `Size: ${formatFileSize(
       file.size || 0,
     )} · ${(file.ext || "").toUpperCase() || "FILE"}`;
+    refreshNextStep();
   }
 
   /* ---------- Cumulative session counters ---------- */
@@ -213,6 +264,70 @@
     }
   }
 
+  /* ---------- Next-step guidance card ---------- */
+
+  const NEXT_STEP_ICONS = {
+    info: "bi-info-circle-fill",
+    success: "bi-check-circle-fill",
+    warning: "bi-exclamation-triangle-fill",
+    danger: "bi-x-octagon-fill",
+    running: "bi-arrow-repeat",
+  };
+
+  function setNextStep(variant, title, text) {
+    if (!nextStepCard) return;
+    nextStepCard.className = `panel next-step-card ${variant}`;
+    nextStepIcon.innerHTML = `<i class="bi ${
+      NEXT_STEP_ICONS[variant] || NEXT_STEP_ICONS.info
+    }"></i>`;
+    nextStepTitle.textContent = title;
+    nextStepText.textContent = text;
+  }
+
+  // Chooses the guidance message from whatever the operator still has to do
+  // before a run can start (used whenever the run is idle).
+  function refreshNextStep() {
+    if (state.running) return; // stage events drive the card during a run
+
+    if (!state.connected) {
+      setNextStep(
+        "info",
+        "Step 1 — Connect",
+        "Select the COM port in the list, then press Connect.",
+      );
+      return;
+    }
+    if (!state.file) {
+      setNextStep(
+        "info",
+        "Step 2 — Select firmware",
+        "Browse for the .bin or .csv firmware file to flash.",
+      );
+      return;
+    }
+    if (Bridge.available && !state.file.path) {
+      setNextStep(
+        "warning",
+        "Firmware path missing",
+        "Drag & drop can't provide a file path in the desktop app — use the Browse button.",
+      );
+      return;
+    }
+    if (!expectedFw.value.trim()) {
+      setNextStep(
+        "warning",
+        "Step 3 — Fw version check",
+        "Enter the expected firmware version (required), e.g. 1.4.2.",
+      );
+      return;
+    }
+    setNextStep(
+      "success",
+      "Ready to start",
+      "Insert the first PCBA into the adapter and press start.",
+    );
+  }
+
   /* ---------- Run control UI ---------- */
 
   function beginRun() {
@@ -224,6 +339,11 @@
     connectButton.disabled = true;
     expectedFw.disabled = true;
     setProgress(0);
+    setNextStep(
+      "running",
+      "Starting mass update",
+      "Preparing the fixture — the first stage will begin shortly.",
+    );
   }
 
   function endRunUI() {
@@ -234,11 +354,17 @@
     refreshPortsButton.disabled = false;
     connectButton.disabled = false;
     expectedFw.disabled = false;
+    refreshNextStep();
   }
 
   function validateInputs() {
     if (!comPort.value) {
       appendLog("warning", "Cannot start: no COM port selected.");
+      setNextStep(
+        "warning",
+        "Step 1 — Select COM port",
+        "Choose a COM port from the dropdown before starting.",
+      );
       comPort.focus();
       return false;
     }
@@ -247,17 +373,34 @@
         "warning",
         "Cannot start: connect to the selected COM port first.",
       );
+      setNextStep(
+        "warning",
+        "Step 1 — Connect",
+        "Press Connect to open the selected COM port first.",
+      );
       connectButton.focus();
       return false;
     }
     if (!state.file || (Bridge.available && !state.file.path)) {
       appendLog("warning", "Cannot start: select a firmware file first.");
+      setNextStep(
+        "warning",
+        "Step 2 — Select firmware",
+        Bridge.available && state.file && !state.file.path
+          ? "Use the Browse button — drag & drop has no file path in the desktop app."
+          : "Choose the .bin or .csv firmware file to flash.",
+      );
       dropZone.scrollIntoView({ behavior: "smooth", block: "nearest" });
       return false;
     }
     const ext = (state.file.ext || "").toLowerCase();
     if (ext !== "bin" && ext !== "csv") {
       appendLog("error", "Unsupported file type - choose a .bin or .csv file.");
+      setNextStep(
+        "danger",
+        "Unsupported file type",
+        "Select a .bin or .csv firmware file instead.",
+      );
       return false;
     }
     // FW version check input is REQUIRED for mass update.
@@ -267,6 +410,11 @@
         "warning",
         "Fw version check is REQUIRED - enter the expected firmware version to run.",
       );
+      setNextStep(
+        "warning",
+        "Step 3 — Fw version check",
+        "Enter the expected firmware version (required), e.g. 1.4.2.",
+      );
       expectedFw.focus();
       return false;
     }
@@ -274,6 +422,11 @@
       appendLog(
         "error",
         "Invalid FW version format - use decimal numbers separated by dots, e.g. 1.4.2",
+      );
+      setNextStep(
+        "danger",
+        "Invalid FW version",
+        "Use decimal numbers separated by dots, e.g. 1.4.2.",
       );
       expectedFw.select();
       return false;
@@ -342,6 +495,27 @@
     endRunUI();
     if (res && res.reason && !res.stopped) {
       appendLog("error", `Continuous update ended: ${res.reason}`);
+    }
+
+    // Reflect how the run ended in the guidance card.
+    if (res && res.stopped) {
+      setNextStep(
+        "warning",
+        "Update stopped",
+        "Mass update was stopped — press Start to run another batch.",
+      );
+    } else if (res && res.reason) {
+      setNextStep(
+        "danger",
+        "Update ended with an error",
+        `${res.reason} — resolve the issue, then press Start to retry.`,
+      );
+    } else {
+      setNextStep(
+        "success",
+        "Batch finished",
+        "All PCBAs done — press Start to run another batch.",
+      );
     }
   }
 
@@ -641,6 +815,11 @@
       }),
     );
 
+    // Expected FW input: keep the guidance card in sync while typing
+    expectedFw.addEventListener("input", () => {
+      if (!state.running) refreshNextStep();
+    });
+
     // Browse: use the native OS dialog when the backend is available
     browseLabel.addEventListener("click", (event) => {
       if (Bridge.available) {
@@ -779,5 +958,7 @@
       });
       setConnectedUI(false, null);
     }
+
+    refreshNextStep();
   })();
 })();
