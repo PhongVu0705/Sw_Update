@@ -204,6 +204,13 @@
     // Mirror the stage in the next-step guidance card.
     const step = NEXT_STEP_BY_STAGE[stage];
     if (step) setNextStep(step[0], step[1], step[2]);
+
+    // FW flashing/verification in progress: hold the verification card
+    // in the neutral blinking WAITING... state until the finished cycle
+    // result arrives via onMassResult (then it flips to PASS/FAIL).
+    if (FW_VERIFY_PENDING_STAGES.has(stage)) {
+      setFwVerifyState("pending", `${label}...`);
+    }
   }
 
   function setConnectedUI(connected, port) {
@@ -228,6 +235,44 @@
     refreshNextStep();
   }
 
+  /* ---------- FW verification status card ---------- */
+
+  // Stages that belong to an in-progress PCBA cycle (target polling,
+  // flashing, FW verification): the FW verification card must show the
+  // neutral "WAITING..." state while they run. The card only switches to
+  // PASS/FAIL once recordMassResult() receives the finished cycle verdict.
+  const FW_VERIFY_PENDING_STAGES = new Set([
+    "waiting_for_target",
+    "targeting",
+    "programming",
+    "verifying",
+  ]);
+
+  // status: "pending" | "pass" | "fail"; detail (optional) fills .stat-sub.
+  function setFwVerifyState(status, detail) {
+    const pending = status === "pending";
+    const passed = status === "pass";
+    const variant = pending ? "pending" : passed ? "pass" : "fail";
+
+    lastUpdateCard.classList.toggle("pending", pending);
+    lastUpdateCard.classList.toggle("pass", !pending && passed);
+    lastUpdateCard.classList.toggle("fail", !pending && !passed);
+
+    lastUpdateIcon.className = `stat-icon ${variant}`;
+    lastUpdateIcon.innerHTML = pending
+      ? '<i class="bi bi-hourglass-split"></i>'
+      : `<i class="bi bi-${passed ? "check-lg" : "x-lg"}"></i>`;
+
+    lastUpdateStatus.textContent = pending
+      ? "WAITING..."
+      : passed
+        ? "PASS"
+        : "FAIL";
+    lastUpdateStatus.className = `stat-value ${variant}`;
+
+    if (detail != null) lastUpdateDetail.textContent = detail;
+  }
+
   /* ---------- Cumulative session counters ---------- */
 
   function completedCount() {
@@ -250,13 +295,9 @@
     }
 
     if (res) {
-      const passed = !!res.pass;
-      lastUpdateCard.classList.toggle("pass", passed);
-      lastUpdateCard.classList.toggle("fail", !passed);
-      lastUpdateIcon.className = `stat-icon ${passed ? "pass" : "fail"}`;
-      lastUpdateIcon.innerHTML = `<i class="bi bi-${passed ? "check-lg" : "x-lg"}"></i>`;
-      lastUpdateStatus.textContent = passed ? "PASS" : "FAIL";
-      lastUpdateStatus.className = `stat-value ${passed ? "pass" : "fail"}`;
+      // A full update + FW verification cycle finished: only now does the
+      // card leave the pending WAITING... state and show PASS or FAIL.
+      setFwVerifyState(res.pass ? "pass" : "fail");
     }
 
     // Last-result detail under the status card
@@ -412,8 +453,8 @@
     const locked = state.isMassPageLocked;
     lockToggle.setAttribute("aria-pressed", String(locked));
     lockToggle.title = locked
-      ? "Page locked — click to unlock (password required)"
-      : "Click to lock the page controls with a password";
+      ? "Page locked (Focus Mode) — click to unlock (password required)"
+      : "Click to lock the page in Focus Mode with a password";
     lockToggle.classList.toggle("is-locked", locked);
     lockIcon.className = locked
       ? "bi bi-lock-fill text-warning lock-icon"
@@ -462,8 +503,8 @@
     appendLog(
       "info",
       locked
-        ? "Page locked — controls are disabled (Start/Stop stay active). Click the 'Mass Update' title and enter the password to unlock."
-        : "Page unlocked — all controls restored.",
+        ? "Page locked — Focus Mode active: setup controls and the terminal are hidden (Start/Stop stay active). Click the 'Mass Update' title and enter the password to unlock."
+        : "Page unlocked — Focus Mode off: all hidden body components and controls restored.",
     );
   }
 
@@ -498,6 +539,12 @@
     connectButton.disabled = true;
     expectedFw.disabled = true;
     setProgress(0);
+    // Starting a new update cycle: reset the FW verification card to the
+    // neutral blinking WAITING... state until the cycle result arrives.
+    setFwVerifyState(
+      "pending",
+      "Update cycle started — FW verification pending...",
+    );
     setNextStep(
       "running",
       "Starting mass update",
@@ -656,6 +703,16 @@
     endRunUI();
     if (res && res.reason && !res.stopped) {
       appendLog("error", `Continuous update ended: ${res.reason}`);
+    }
+
+    // If the run ended before any full update + verification cycle
+    // finished (stopped early or errored on the first PCBA), clarify the
+    // still-pending card instead of leaving a bare "WAITING...".
+    if (lastUpdateCard.classList.contains("pending")) {
+      lastUpdateDetail.textContent =
+        res && res.stopped
+          ? "Stopped before a verification result"
+          : "Ended without a verification result";
     }
 
     // Reflect how the run ended in the guidance card.
@@ -1138,9 +1195,11 @@
       modal.addEventListener("click", (event) => {
         if (event.target === modal) closeLockModal(modal);
       });
-      modal.querySelectorAll("[data-close-lock-modal]").forEach((button) =>
-        button.addEventListener("click", () => closeLockModal(modal)),
-      );
+      modal
+        .querySelectorAll("[data-close-lock-modal]")
+        .forEach((button) =>
+          button.addEventListener("click", () => closeLockModal(modal)),
+        );
     });
 
     // Escape closes whichever lock dialog is open.

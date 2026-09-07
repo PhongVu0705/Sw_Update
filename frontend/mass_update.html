@@ -182,21 +182,21 @@
               </div>
             </article>
             <article
-              class="panel stat-card last-update-card"
+              class="panel stat-card last-update-card pending"
               id="last-update-card"
               aria-live="polite"
             >
               <span
-                class="stat-icon info"
+                class="stat-icon pending"
                 id="last-update-icon"
                 aria-hidden="true"
               >
-                <i class="bi bi-clock-history"></i>
+                <i class="bi bi-hourglass-split"></i>
               </span>
               <div>
-                <p class="stat-label">LAST UPDATE</p>
-                <strong class="stat-value" id="last-update-status"
-                  >WAITING</strong
+                <p class="stat-label">FW VERIFICATION STATUS</p>
+                <strong class="stat-value pending" id="last-update-status"
+                  >WAITING...</strong
                 >
                 <p class="stat-sub" id="last-update-detail">
                   No PCBA updated this session
@@ -295,9 +295,10 @@
         <form id="set-lock-form" novalidate>
           <div class="modal-body lock-modal-body">
             <p class="lock-modal-hint">
-              Choose a password to lock the Mass Update page. While locked,
-              every control is disabled except <strong>Start</strong> and
-              <strong>Stop</strong>.
+              Choose a password to lock the Mass Update page. While locked, the
+              page enters <strong>Focus Mode</strong>: setup controls and the
+              terminal are hidden, and only <strong>Start</strong> and
+              <strong>Stop</strong> stay active.
             </p>
             <label class="lock-field-label" for="set-lock-password"
               >Password</label
@@ -326,7 +327,11 @@
             <p class="modal-error" id="set-lock-error" role="alert" hidden></p>
           </div>
           <footer class="lock-modal-footer">
-            <button class="lock-btn-secondary" type="button" data-close-lock-modal>
+            <button
+              class="lock-btn-secondary"
+              type="button"
+              data-close-lock-modal
+            >
               Cancel
             </button>
             <button class="lock-btn-primary" type="submit" id="set-lock-submit">
@@ -362,8 +367,8 @@
         <form id="unlock-form" novalidate>
           <div class="modal-body lock-modal-body">
             <p class="lock-modal-hint">
-              The page controls are locked. Enter the lock password to restore
-              full access.
+              The page is locked in <strong>Focus Mode</strong>. Enter the lock
+              password to restore the full layout and access to all controls.
             </p>
             <label class="lock-field-label" for="unlock-password"
               >Password</label
@@ -380,7 +385,11 @@
             <p class="modal-error" id="unlock-error" role="alert" hidden></p>
           </div>
           <footer class="lock-modal-footer">
-            <button class="lock-btn-secondary" type="button" data-close-lock-modal>
+            <button
+              class="lock-btn-secondary"
+              type="button"
+              data-close-lock-modal
+            >
               Cancel
             </button>
             <button class="lock-btn-primary" type="submit" id="unlock-submit">

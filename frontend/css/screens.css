@@ -1577,3 +1577,66 @@ button:disabled {
   outline: 2px solid #111827;
   outline-offset: 2px;
 }
+
+/* ---------- FW verification status card — pending state ---------- */
+
+/* Neutral / muted look while flashing + FW verification is in progress */
+.last-update-card.pending {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.stat-icon.pending {
+  background-color: #e2e8f0;
+  color: #64748b;
+}
+
+.stat-value.pending {
+  color: #64748b;
+  background-color: #e2e8f0;
+}
+
+/* Blinking hourglass while the update + verify cycle is running */
+.last-update-card.pending .stat-icon i {
+  animation: fw-verify-pending 1.2s ease-in-out infinite;
+}
+
+@keyframes fw-verify-pending {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .last-update-card.pending .stat-icon i {
+    animation: none;
+  }
+}
+
+/* ---------- Focus Mode (page locked) ---------- */
+
+/* While the Mass Update page is locked, hide every body component except:
+     - the pass/fail rate card + FW verification status card
+     - the user guide (next-step) card
+     - the Start/Stop action row (Start/Stop must stay usable)
+   The header, footer status bar and modals remain untouched. Unlocking
+   the page removes body.mass-page-locked and restores everything. */
+.mass-page-locked #mass-form .connection-row,
+.mass-page-locked #mass-form .tool-type-row,
+.mass-page-locked #mass-form > .section-title,
+.mass-page-locked #mass-form .drop-zone,
+.mass-page-locked #mass-form > .command-input,
+.mass-page-locked .right-pane {
+  display: none;
+}
+
+/* Compact the control panel so it only wraps the Start/Stop buttons */
+.mass-page-locked #mass-form {
+  padding: 16px;
+  gap: 0;
+}
