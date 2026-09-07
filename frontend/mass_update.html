@@ -169,16 +169,24 @@
           </form>
 
           <section class="status-cards-row" aria-label="Mass update results">
-            <article class="panel stat-card">
-              <span class="stat-icon info" aria-hidden="true">
-                <i class="bi bi-pie-chart-fill"></i>
+            <article class="panel stat-card pass-rate-card">
+              <span class="stat-icon pass" aria-hidden="true">
+                <i class="bi bi-check-lg"></i>
               </span>
               <div>
-                <p class="stat-label">PASS / FAIL RATE</p>
-                <strong class="stat-value" id="rate-value">&mdash;</strong>
-                <p class="stat-sub" id="rate-detail">
-                  Passed 0 &middot; Failed 0
-                </p>
+                <p class="stat-label">PASS RATE</p>
+                <strong class="stat-value pass" id="pass-rate-value">0%</strong>
+                <p class="stat-sub" id="pass-rate-detail">Passed 0</p>
+              </div>
+            </article>
+            <article class="panel stat-card fail-rate-card">
+              <span class="stat-icon fail" aria-hidden="true">
+                <i class="bi bi-x-lg"></i>
+              </span>
+              <div>
+                <p class="stat-label">FAIL RATE</p>
+                <strong class="stat-value fail" id="fail-rate-value">0%</strong>
+                <p class="stat-sub" id="fail-rate-detail">Failed 0</p>
               </div>
             </article>
             <article

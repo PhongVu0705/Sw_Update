@@ -523,16 +523,26 @@ button:disabled {
   padding: 18px;
 }
 
-/* Compact: sits beside the pass-rate card in the same grid row */
+/* The verification result gets a dedicated, more prominent row. */
 .last-update-card {
+  grid-column: 1 / -1;
+  min-height: 112px;
+  padding: 24px;
   transition:
     background-color 160ms ease,
     border-color 160ms ease;
 }
 
+.last-update-card .stat-icon {
+  width: 56px;
+  height: 56px;
+  font-size: 28px;
+}
+
 .last-update-card .stat-value {
   margin: 8px 0 4px;
   padding: 5px 12px;
+  font-size: 18px;
 }
 
 .last-update-card.pass {
@@ -1621,7 +1631,7 @@ button:disabled {
 /* ---------- Focus Mode (page locked) ---------- */
 
 /* While the Mass Update page is locked, hide every body component except:
-     - the pass/fail rate card + FW verification status card
+     - the pass and fail rate cards + FW verification status card
      - the user guide (next-step) card
      - the Start/Stop action row (Start/Stop must stay usable)
    The header, footer status bar and modals remain untouched. Unlocking
@@ -1635,8 +1645,12 @@ button:disabled {
   display: none;
 }
 
-/* Compact the control panel so it only wraps the Start/Stop buttons */
+/* Let the action row take part in the left pane's layout. Its order places
+   it immediately below the guidance card while Focus Mode is active. */
 .mass-page-locked #mass-form {
-  padding: 16px;
-  gap: 0;
+  display: contents;
+}
+
+.mass-page-locked #mass-form .action-buttons {
+  order: 3;
 }

@@ -37,8 +37,10 @@
   const terminalLogs = $("terminal-logs");
 
   // New stat cards (cumulative session counters)
-  const rateValueEl = $("rate-value");
-  const rateDetailEl = $("rate-detail");
+  const passRateValueEl = $("pass-rate-value");
+  const passRateDetailEl = $("pass-rate-detail");
+  const failRateValueEl = $("fail-rate-value");
+  const failRateDetailEl = $("fail-rate-detail");
   const lastUpdateCard = $("last-update-card");
   const lastUpdateIcon = $("last-update-icon");
   const lastUpdateStatus = $("last-update-status");
@@ -282,16 +284,17 @@
   function refreshStatCards(res) {
     const total = completedCount();
     if (total === 0) {
-      rateValueEl.textContent = "—";
-      rateValueEl.className = "stat-value";
-      rateDetailEl.textContent = "Passed 0 · Failed 0";
+      passRateValueEl.textContent = "0%";
+      passRateDetailEl.textContent = "Passed 0";
+      failRateValueEl.textContent = "0%";
+      failRateDetailEl.textContent = "Failed 0";
     } else {
       const passPct = Math.round((state.passed / total) * 1000) / 10;
       const failPct = Math.round((state.failed / total) * 1000) / 10;
-      const allPass = state.failed === 0;
-      rateValueEl.className = `stat-value ${allPass ? "pass" : passPct >= 50 ? "pass" : "fail"}`;
-      rateValueEl.textContent = `${passPct}% / ${failPct}%`;
-      rateDetailEl.textContent = `Passed ${state.passed} · Failed ${state.failed}`;
+      passRateValueEl.textContent = `${passPct}%`;
+      passRateDetailEl.textContent = `Passed ${state.passed}`;
+      failRateValueEl.textContent = `${failPct}%`;
+      failRateDetailEl.textContent = `Failed ${state.failed}`;
     }
 
     if (res) {
