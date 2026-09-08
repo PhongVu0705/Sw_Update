@@ -522,13 +522,20 @@ class JSAPI:
         except Exception as exc:
             return {"pass": False, "detected": None, "reason": f"Update error: {exc}"}
 
-    def _send_target_and_get_rx(self, tool_type: str, timeout_s: float = 0.5):
-        """Sends single target command and waits for response byte[0] safely."""
-        target_base = "70 01 01 01" if tool_type == "M18" else "70 01 01 11"
-        target_frame = bytes.fromhex(build_frame(target_base))
-        
+    def _send_cmd_and_get_rx(self, hex_cmd: str, timeout_s: float = 0.5):
+        """
+        Sends a single hex command with 0x85 flow control and waits for response byte[0] safely.
+        - Flow control: before sending command, inspect last header (hold if header == 0x85).
+        - Filter: if response header is 0x85, hold and wait until header != 0x85.
+        """
+        # Flow control: inspect last header before transmitting
+        if self.comm:
+            command_runner.wait_if_header_0x85(self.comm, timeout_ms=int(timeout_s * 1000), log_callback=self.log)
+
+        cmd_frame = bytes.fromhex(build_frame(hex_cmd))
         command_runner.last_rx_frame = None
-        if not self.comm or not self.comm.send_no_wait(target_frame):
+
+        if not self.comm or not self.comm.send_no_wait(cmd_frame):
             return None
 
         deadline = time.monotonic() + timeout_s
@@ -539,108 +546,58 @@ class JSAPI:
             print_queued_messages(self.log)
             rx = command_runner.last_rx_frame
             if rx and len(rx) > 0:
+                first_byte = rx[0]
+                if first_byte == 0x85:
+                    # Hold and wait for non-0x85 response frame
+                    self.log("Received 0x85 header (busy/multi-frame) — holding and waiting...")
+                    command_runner.last_rx_frame = None
+                    continue
                 return rx
         return None
 
+    def _send_target_and_get_rx(self, tool_type: str, timeout_s: float = 0.5):
+        """Sends single target command (selected M18/M12) with 0x85 flow control."""
+        target_base = "70 01 01 01" if tool_type == "M18" else "70 01 01 11"
+        return self._send_cmd_and_get_rx(target_base, timeout_s=timeout_s)
+
+    def _send_unplug_verification_commands(self, tool_type: str, timeout_s: float = 0.5):
+        """
+        Enhanced Unplug Detection:
+        Sends ONLY ONE selected Target command (based on user selection at start:
+        M18='70 01 01 01' or M12='70 01 01 11') and the Default Password command in sequence.
+        Both commands are checked with 0x85 flow control filter.
+        Returns tuple: (rx_target, rx_pwd)
+        """
+        # Strictly select ONLY ONE target command based on user choice at start
+        target_base = "70 01 01 01" if tool_type == "M18" else "70 01 01 11"
+        password_base = "01 01 0A 00 3B 33 33 33 33 33 33 33 33"
+
+        rx_target = self._send_cmd_and_get_rx(target_base, timeout_s=timeout_s)
+        rx_pwd = self._send_cmd_and_get_rx(password_base, timeout_s=timeout_s)
+
+        return rx_target, rx_pwd
+
     def _continuous_mass_update_worker(self, port_name, file_path, ext, tool_type, expected_fw):
         """
-        Implementation of the Refactored Mass Update Flow:
-        - Post-update close port & 1s delay
-        - State WAIT_UNPLUG_LOOP (Cycling Port)
-        - State WAIT_NEXT_TARGET_LOOP (Strict debounce with >= 3x 82/83)
+        Implementation of On-Demand Mass Update Flow (Button Click Driven):
+        - Executes flash & verify sequence for the attached target tool on demand.
+        - Reports result to frontend and completes cleanly.
+        - Does NOT auto-poll or auto-start when a new tool is plugged in;
+          user must press the Update button to initiate each update.
         """
         terminal_reason = ""
         try:
-            self.log(f"Continuous mass update loop active on {port_name}.")
+            self.log(f"Mass update sequence initiated on {port_name}.")
             
-            while not self.controller.stop_requested():
-                # --- STAGE 1: Flash & Verify current target ---
-                self.log("\n--- STARTING FLASH & VERIFY SEQUENCE ---")
-                result = self._flash_and_verify_mass_target(file_path, ext, tool_type, expected_fw)
-                self._push("onMassResult", {**result, "expected": expected_fw})
-                
-                if result["pass"]:
-                    self.log(f"MASS UPDATE PASS: FW {result.get('detected') or '?'}")
-                else:
-                    self.log(f"MASS UPDATE FAIL: {result.get('reason') or 'unknown error'}")
-
-                # --- STAGE 2: Post-Update Disconnect & Delay ---
-                self.log("Post-Update: Closing Serial Port & Waiting 1.0s to clear hardware buffer...")
-                self.disconnect_port()
-                self._wait_with_cancel(1.0)
-
-                # --- STAGE 3: [WAIT_UNPLUG_LOOP] (Cycling Port Connection) ---
-                self._push("onMassStage", "waiting_for_unplug")
-                self.log("Entering WAIT_UNPLUG_LOOP (Cycling port connection)...")
-
-                while not self.controller.stop_requested():
-                    # Step A: Open port safely
-                    try:
-                        self.comm = OpenLinkComm(
-                            port=port_name,
-                            baud_rate=BAUD_RATE,
-                            on_rx=on_rx_callback,
-                            on_tx=on_tx_callback,
-                        )
-                        if not self.comm.connect():
-                            raise IOError("Port open failed")
-                        self.is_connected = True
-                        self.connected_port = port_name
-                        self._push_connection()
-                    except Exception as e:
-                        self.log(f"Failed to open port {port_name}: {e}. Retrying in 1.0s...")
-                        self.disconnect_port()
-                        self._wait_with_cancel(1.0)
-                        continue
-
-                    # Step B & C: Send target once & check Rx
-                    rx = self._send_target_and_get_rx(tool_type, timeout_s=0.5)
-                    first_byte = rx[0] if rx else None
-
-                    if first_byte in TARGET_ACK_HEADERS:
-                        self.log(f"[MCU RX]: {first_byte:02X} - Target still attached. Closing port & waiting 1.0s...")
-                        self.disconnect_port()
-                        self._wait_with_cancel(1.0)
-                    elif first_byte in TARGET_UNPLUG_HEADERS:
-                        self.log(f"[MCU RX]: {first_byte:02X} - Unplug/Ready response detected! Keeping port OPEN.")
-                        break
-                    else:
-                        header_str = f"{first_byte:02X}" if first_byte is not None else "Timeout"
-                        self.log(f"[MCU RX]: {header_str} - No target ACK. Re-cycling port...")
-                        self.disconnect_port()
-                        self._wait_with_cancel(1.0)
-
-                # --- STAGE 4: [WAIT_NEXT_TARGET_LOOP] (Continuous Polling & Debounce) ---
-                self._push("onMassStage", "waiting_for_next_target")
-                self.log("Entering WAIT_NEXT_TARGET_LOOP (Continuous polling with strict debounce)...")
-
-                consecutive_nack_counter = 1  # First 0x82/0x83 count from Stage 3
-                ready_to_flash = False
-
-                while not self.controller.stop_requested():
-                    self._wait_with_cancel(0.5)
-                    rx = self._send_target_and_get_rx(tool_type, timeout_s=0.5)
-                    first_byte = rx[0] if rx else None
-
-                    if first_byte in TARGET_UNPLUG_HEADERS:
-                        consecutive_nack_counter += 1
-                        self.log(f"Target unplug status {first_byte:02X}: {consecutive_nack_counter}/3 consecutive.")
-                        if consecutive_nack_counter >= 3:
-                            if not ready_to_flash:
-                                self.log("READY_TO_FLASH = TRUE. Place next PCBA target.")
-                            ready_to_flash = True
-                    elif first_byte in TARGET_ACK_HEADERS:
-                        if ready_to_flash:
-                            self.log(f"New PCBA detected with header {first_byte:02X}! Starting update sequence.")
-                            break
-                        else:
-                            self.log(f"Header {first_byte:02X} received, but debounce counter ({consecutive_nack_counter}/3) insufficient. Resetting counter.")
-                            consecutive_nack_counter = 0
-                    else:
-                        header_str = f"{first_byte:02X}" if first_byte is not None else "Timeout"
-                        self.log(f"Unexpected response ({header_str}). Resetting debounce counter to 0.")
-                        consecutive_nack_counter = 0
-                        ready_to_flash = False
+            # --- STAGE 1: Flash & Verify current target ---
+            self.log("\n--- STARTING FLASH & VERIFY SEQUENCE ---")
+            result = self._flash_and_verify_mass_target(file_path, ext, tool_type, expected_fw)
+            self._push("onMassResult", {**result, "expected": expected_fw})
+            
+            if result["pass"]:
+                self.log(f"MASS UPDATE PASS: FW {result.get('detected') or '?'}")
+            else:
+                self.log(f"MASS UPDATE FAIL: {result.get('reason') or 'unknown error'}")
 
         except RuntimeError as exc:
             terminal_reason = str(exc)
@@ -650,13 +607,12 @@ class JSAPI:
             stopped = self.controller.stop_requested()
             self.mass_running = False
             self.controller.reset()
-            self.disconnect_port()
             self._push("onMassStage", "done")
             self._push("onMassFinished", {"stopped": stopped, "reason": terminal_reason})
             if stopped:
-                self.log("Continuous mass update stopped by operator.")
+                self.log("Mass update stopped by operator.")
             elif terminal_reason:
-                self.log(f"Continuous mass update ended: {terminal_reason}")
+                self.log(f"Mass update ended: {terminal_reason}")
 
     # ------------------------------------------------------------------
     # Run controls

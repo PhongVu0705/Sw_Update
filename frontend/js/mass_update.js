@@ -85,7 +85,7 @@
     ],
     waiting_for_unplug: [
       "Waiting for unplug",
-      "Sending Target every 1.0 s; need 5 consecutive 0x82/0x83 responses...",
+      "Sending Target every 1.0 s; need 3 consecutive 0x82/0x83 responses...",
     ],
     waiting_for_next_target: [
       "Waiting for next target",
@@ -130,7 +130,7 @@
     waiting_for_next_target: [
       "success",
       "Insert the next PCBA",
-      "PCBA finished — place the next one to continue the batch.",
+      "PCBA finished — place the next one to continue.",
     ],
     done: [
       "success",
@@ -324,9 +324,8 @@
   function setNextStep(variant, title, text) {
     if (!nextStepCard) return;
     nextStepCard.className = `panel next-step-card ${variant}`;
-    nextStepIcon.innerHTML = `<i class="bi ${
-      NEXT_STEP_ICONS[variant] || NEXT_STEP_ICONS.info
-    }"></i>`;
+    nextStepIcon.innerHTML = `<i class="bi ${NEXT_STEP_ICONS[variant] || NEXT_STEP_ICONS.info
+      }"></i>`;
     nextStepTitle.textContent = title;
     nextStepText.textContent = text;
   }
@@ -723,7 +722,7 @@
       setNextStep(
         "warning",
         "Update stopped",
-        "Mass update was stopped — press Start to run another batch.",
+        "Mass update was stopped — press Start to run again.",
       );
     } else if (res && res.reason) {
       setNextStep(
@@ -734,8 +733,8 @@
     } else {
       setNextStep(
         "success",
-        "Batch finished",
-        "All PCBAs done — press Start to run another batch.",
+        "Update finished",
+        "Update done — insert next PCBA and press Start to run again.",
       );
     }
   }
@@ -888,8 +887,8 @@
           sim.progress >= 100
             ? ""
             : `Estimated Time Remaining: ~${Math.round(
-                ((100 - sim.progress) / 100) * 60,
-              )} seconds`;
+              ((100 - sim.progress) / 100) * 60,
+            )} seconds`;
         if (Math.random() < 0.35) {
           const block = Math.max(1, Math.round((sim.progress / 100) * 64));
           appendLog(
