@@ -35,6 +35,7 @@
   const stopButton = $("stop-button");
   const clearLogsButton = $("clear-logs");
   const terminalLogs = $("terminal-logs");
+  const MAX_LOG_LINES = 1000;
 
   // New stat cards (cumulative session counters)
   const passRateValueEl = $("pass-rate-value");
@@ -175,6 +176,9 @@
     line.className = `log-line log-${level}`;
     line.textContent = `[${timestamp()}] ${message}`;
     terminalLogs.appendChild(line);
+    if (terminalLogs.childElementCount > MAX_LOG_LINES) {
+      terminalLogs.removeChild(terminalLogs.firstElementChild);
+    }
     terminalLogs.scrollTop = terminalLogs.scrollHeight;
   }
 

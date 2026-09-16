@@ -1,4 +1,5 @@
 import queue
+import threading
 import time
 from opelink_comm import OpenLinkComm
 from script_builder import build_frame
@@ -6,10 +7,13 @@ from script_builder import build_frame
 # Manage TX/RX state
 msg_queue = queue.Queue()
 last_rx_frame = None
+rx_condition = threading.Condition()
 
 def on_rx_callback(frame: bytes):
     global last_rx_frame
-    last_rx_frame = frame
+    with rx_condition:
+        last_rx_frame = frame
+        rx_condition.notify_all()
     msg_queue.put(f"[MCU RX]: {frame.hex(' ').upper()}")
 
 def on_tx_callback(frame: bytes):
@@ -39,15 +43,45 @@ def wait_if_header_0x85(comm: OpenLinkComm, timeout_ms=10000, log_callback=None)
     If header == 0x85, hold and wait until header != 0x85.
     """
     global last_rx_frame
-    deadline = time.time() + timeout_ms / 1000.0
-    while last_rx_frame is not None and len(last_rx_frame) > 0 and last_rx_frame[0] == 0x85:
-        if time.time() >= deadline:
-            _log("⚠️ Timeout waiting for 0x85 header to clear before command transmission!", log_callback)
-            return False
-        _log("Header is 0x85 (busy/multi-frame) — holding transmission of next command...", log_callback)
-        time.sleep(0.05)
-        print_queued_messages(log_callback)
+    deadline = time.monotonic() + timeout_ms / 1000.0
+    logged_busy = False
+    with rx_condition:
+        while last_rx_frame is not None and len(last_rx_frame) > 0 and last_rx_frame[0] == 0x85:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _log("⚠️ Timeout waiting for 0x85 header to clear before command transmission!", log_callback)
+                return False
+            if not logged_busy:
+                _log("Header is 0x85 (busy/multi-frame) — holding transmission...", log_callback)
+                logged_busy = True
+            rx_condition.wait(timeout=remaining)
+            print_queued_messages(log_callback)
     return True
+
+
+def _wait_for_response(timeout_ms=10000, final_only=False, log_callback=None):
+    """Wait for the receiver thread to publish a response without polling."""
+    global last_rx_frame
+    deadline = time.monotonic() + timeout_ms / 1000.0
+    with rx_condition:
+        while True:
+            frame = last_rx_frame
+            if frame is not None and len(frame) > 0:
+                first_byte = frame[0]
+                if first_byte == 0x85:
+                    _log(
+                        "Received 0x85 header (busy/multi-frame) — waiting for final response...",
+                        log_callback,
+                    )
+                    last_rx_frame = None
+                elif not final_only or first_byte in (0x80, 0x81, 0x82, 0x83):
+                    return frame
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            rx_condition.wait(timeout=remaining)
+            print_queued_messages(log_callback)
 
 
 def send_and_get_rx(comm: OpenLinkComm, hex_cmd: str, timeout_ms=10000, log_callback=None) -> bytes:
@@ -61,35 +95,21 @@ def send_and_get_rx(comm: OpenLinkComm, hex_cmd: str, timeout_ms=10000, log_call
     if not wait_if_header_0x85(comm, timeout_ms=timeout_ms, log_callback=log_callback):
         return None
 
-    last_rx_frame = None
+    with rx_condition:
+        last_rx_frame = None
 
     _log(f"\n--- [TX]: {hex_cmd} ---", log_callback)
     success = comm.send_hex(hex_cmd, timeout_ms=timeout_ms)
-    time.sleep(0.05)
     print_queued_messages(log_callback)
 
     if not success:
         _log("Timeout or no response from MCU!", log_callback)
         return None
 
-    # 2. Hold and wait while response header is 0x85 until header != 0x85
-    deadline = time.time() + timeout_ms / 1000.0
-    while time.time() < deadline:
-        if last_rx_frame is not None:
-            first_byte = last_rx_frame[0]
-            if first_byte == 0x85:
-                _log("Received 0x85 header (busy/multi-frame) — holding and waiting for final response...", log_callback)
-                last_rx_frame = None
-                time.sleep(0.05)
-                print_queued_messages(log_callback)
-                continue
-            else:
-                return last_rx_frame
-        time.sleep(0.05)
-        print_queued_messages(log_callback)
-
-    _log("Timeout or no final response (header != 0x85) from MCU!", log_callback)
-    return None
+    response = _wait_for_response(timeout_ms=timeout_ms, log_callback=log_callback)
+    if response is None:
+        _log("Timeout or no final response (header != 0x85) from MCU!", log_callback)
+    return response
 
 
 def send_and_get_final_rx(comm: OpenLinkComm, hex_cmd: str, timeout_ms=10000, log_callback=None) -> bytes:
@@ -105,34 +125,23 @@ def send_and_get_final_rx(comm: OpenLinkComm, hex_cmd: str, timeout_ms=10000, lo
     if not wait_if_header_0x85(comm, timeout_ms=timeout_ms, log_callback=log_callback):
         return None
 
-    last_rx_frame = None
+    with rx_condition:
+        last_rx_frame = None
 
     _log(f"\n--- [TX]: {hex_cmd} ---", log_callback)
     success = comm.send_no_wait(bytes.fromhex("".join(hex_cmd.strip().split())))
-    time.sleep(0.05)
     print_queued_messages(log_callback)
 
     if not success:
         _log("⚠️ Failed to send command!", log_callback)
         return None
 
-    # Wait for the final response (0x80/0x81/0x82/0x83), skipping 0x85 frames
-    deadline = time.time() + timeout_ms / 1000.0
-    while time.time() < deadline:
-        time.sleep(0.05)
-        print_queued_messages(log_callback)
-
-        if last_rx_frame is not None:
-            first_byte = last_rx_frame[0]
-            if first_byte == 0x85:
-                # Keep waiting for more frames
-                last_rx_frame = None
-                continue
-            elif first_byte in (0x80, 0x81, 0x82, 0x83):
-                return last_rx_frame
-
-    _log("⚠️ Timeout or no response from MCU!", log_callback)
-    return None
+    response = _wait_for_response(
+        timeout_ms=timeout_ms, final_only=True, log_callback=log_callback
+    )
+    if response is None:
+        _log("⚠️ Timeout or no response from MCU!", log_callback)
+    return response
 
 def _first_cmd_failed(rx_bytes, log_callback=None) -> bool:
     """
