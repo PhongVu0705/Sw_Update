@@ -1233,6 +1233,26 @@
         first.focus();
       }
     });
+
+    // Space starts the mass update (same as clicking Start) whenever the
+    // keypress is not consumed by a form control. onStart() re-validates
+    // the inputs and is a no-op while a run is already active.
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== " " || event.repeat) return;
+      if (event.ctrlKey || event.altKey || event.metaKey) return;
+      if (activeLockModal) return; // a lock dialog is open
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          'button, a, input, select, textarea, [role="button"], [contenteditable="true"]',
+        )
+      ) {
+        return; // let native Space behaviour handle interactive controls
+      }
+      event.preventDefault();
+      onStart();
+    });
   }
 
   /* ---------- Boot ---------- */
