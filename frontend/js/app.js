@@ -6,252 +6,141 @@
 (function () {
   "use strict";
 
-  /* ---------- Changelog data (mirrors COMMIT_HISTORY.md) ---------- */
+  /* ---------- Changelog (parsed from COMMIT_HISTORY.md) ---------- */
 
-  // Badge metadata per change type (add / change / remove, plus fix).
+  // Badge metadata per change type, keyed by the "Type" column values
+  // used in COMMIT_HISTORY.md (add / change / fix / remove).
   var CHANGELOG_TYPE_META = {
-    added: { label: "Added", icon: "bi-plus-lg" },
-    changed: { label: "Changed", icon: "bi-pencil-fill" },
-    fixed: { label: "Fixed", icon: "bi-tools" },
-    removed: { label: "Removed", icon: "bi-trash3-fill" },
+    add: { label: "Add", icon: "bi-plus-lg" },
+    change: { label: "Change", icon: "bi-pencil-fill" },
+    fix: { label: "Fix", icon: "bi-tools" },
+    remove: { label: "Remove", icon: "bi-trash3-fill" },
   };
 
-  // Commits grouped by release, newest first (source: COMMIT_HISTORY.md).
-  var CHANGELOG_RELEASES = [
-    {
-      version: "Unreleased",
-      date: "in development",
-      entries: [
-        {
-          hash: "93176d3",
-          date: "2026-09-17",
-          author: "pvu0705",
-          message: "Add function start with space",
-          type: "added",
-        },
-        {
-          hash: "6963b18",
-          date: "2026-09-16",
-          author: "pvu0705",
-          message: "Refactor command runner and update mass update script",
-          type: "changed",
-        },
-      ],
-    },
-    {
-      version: "1.4.0",
-      date: "2026-09-08",
-      entries: [
-        {
-          hash: "1929842",
-          date: "2026-09-08",
-          author: "pvu0705",
-          message: "update ver 1.4.0",
-          type: "changed",
-        },
-      ],
-    },
-    {
-      version: "1.3.0",
-      date: "2026-09-07",
-      entries: [
-        {
-          hash: "74645cd",
-          date: "2026-09-07",
-          author: "PhongVu0705",
-          message: "update 1.3.0",
-          type: "changed",
-        },
-        {
-          hash: "8557d01",
-          date: "2026-09-07",
-          author: "PhongVu0705",
-          message: "update 1.3.0",
-          type: "changed",
-        },
-        {
-          hash: "86d3a50",
-          date: "2026-09-07",
-          author: "PhongVu0705",
-          message: "update mass reflash UI",
-          type: "added",
-        },
-        {
-          hash: "2f65b1e",
-          date: "2026-09-07",
-          author: "PhongVu0705",
-          message: "update UI",
-          type: "changed",
-        },
-      ],
-    },
-    {
-      version: "1.2.0",
-      date: "2026-09-04",
-      entries: [
-        {
-          hash: "14f3af3",
-          date: "2026-09-04",
-          author: "pvu0705",
-          message: "update version 1.2.0",
-          type: "changed",
-        },
-        {
-          hash: "81bc6d8",
-          date: "2026-09-04",
-          author: "pvu0705",
-          message: "update lock function",
-          type: "changed",
-        },
-        {
-          hash: "ef9d19b",
-          date: "2026-09-04",
-          author: "pvu0705",
-          message: "update UI",
-          type: "changed",
-        },
-        {
-          hash: "9b23941",
-          date: "2026-09-03",
-          author: "pvu0705",
-          message: "update UI",
-          type: "changed",
-        },
-        {
-          hash: "e665ad5",
-          date: "2026-09-03",
-          author: "pvu0705",
-          message: "fix bug main",
-          type: "fixed",
-        },
-        {
-          hash: "0514aa8",
-          date: "2026-09-03",
-          author: "pvu0705",
-          message: "update mass update function",
-          type: "changed",
-        },
-        {
-          hash: "96ea0f0",
-          date: "2026-08-28",
-          author: "pvu0705",
-          message: "update mass update function",
-          type: "added",
-        },
-        {
-          hash: "f96edbf",
-          date: "2026-08-27",
-          author: "pvu0705",
-          message: "update mass update function",
-          type: "added",
-        },
-        {
-          hash: "c377f47",
-          date: "2026-08-26",
-          author: "pvu0705",
-          message: "code final 2.0",
-          type: "changed",
-        },
-      ],
-    },
-    {
-      version: "1.0.0",
-      date: "2026-08-25",
-      entries: [
-        {
-          hash: "ec97c1b",
-          date: "2026-08-25",
-          author: "pvu0705",
-          message: "add checking function",
-          type: "added",
-        },
-        {
-          hash: "44b2b84",
-          date: "2026-08-25",
-          author: "pvu0705",
-          message: "offical code for 1.0.0",
-          type: "changed",
-        },
-        {
-          hash: "503e470",
-          date: "2026-08-24",
-          author: "pvu0705",
-          message: "update code final",
-          type: "changed",
-        },
-        {
-          hash: "a4d28cf",
-          date: "2026-08-24",
-          author: "pvu0705",
-          message: "update full",
-          type: "changed",
-        },
-        {
-          hash: "cbf6adb",
-          date: "2026-08-24",
-          author: "pvu0705",
-          message: "udpate UI",
-          type: "changed",
-        },
-        {
-          hash: "d486f5c",
-          date: "2026-08-24",
-          author: "pvu0705",
-          message: "add UI html",
-          type: "added",
-        },
-        {
-          hash: "79afd6b",
-          date: "2026-08-24",
-          author: "pvu0705",
-          message: "udpate main and add terminal run",
-          type: "added",
-        },
-        {
-          hash: "194b5c2",
-          date: "2026-08-24",
-          author: "pvu0705",
-          message: "udpate logic 2",
-          type: "changed",
-        },
-        {
-          hash: "3fca914",
-          date: "2026-08-21",
-          author: "pvu0705",
-          message: "update UI 2",
-          type: "changed",
-        },
-        {
-          hash: "a7fdbd1",
-          date: "2026-08-21",
-          author: "pvu0705",
-          message: "add UI",
-          type: "added",
-        },
-        {
-          hash: "fb03c8d",
-          date: "2026-08-21",
-          author: "pvu0705",
-          message: "udapte code 2",
-          type: "changed",
-        },
-        {
-          hash: "82eeb73",
-          date: "2026-08-21",
-          author: "pvu0705",
-          message: "update code",
-          type: "changed",
-        },
-        {
-          hash: "17a3d1e",
-          date: "2026-08-20",
-          author: "pvu0705",
-          message: "init code",
-          type: "added",
-        },
-      ],
-    },
-  ];
+  // Source document rendered by the Changelog modal (same folder as index.html).
+  var CHANGELOG_MD_URL = "COMMIT_HISTORY.md";
+
+  // Cached parsed entries; null until the first successful load.
+  var changelogEntries = null;
+
+  function normalizeChangeType(raw) {
+    var type = String(raw || "")
+      .trim()
+      .toLowerCase();
+    return CHANGELOG_TYPE_META[type] ? type : "change";
+  }
+
+  // Parse the markdown table: | hash | date | type | message |
+  function parseCommitHistory(markdown) {
+    var entries = [];
+    String(markdown || "")
+      .split(/\r?\n/)
+      .forEach(function (line) {
+        if (!/^\s*\|/.test(line)) {
+          return;
+        }
+        var cells = line
+          .trim()
+          .replace(/^\|/, "")
+          .replace(/\|$/, "")
+          .split("|")
+          .map(function (cell) {
+            return cell.trim();
+          });
+        if (cells.length < 4) {
+          return;
+        }
+        // Only accept rows whose first cell looks like a commit hash;
+        // this skips the header and separator rows.
+        if (!/^[0-9a-f]{7,40}$/i.test(cells[0])) {
+          return;
+        }
+        entries.push({
+          hash: cells[0],
+          date: cells[1],
+          type: normalizeChangeType(cells[2]),
+          message: cells.slice(3).join(" | "),
+        });
+      });
+    return entries;
+  }
+
+  // Group entries into releases. A release starts at a commit whose
+  // message contains a semantic version (e.g. "update ver 1.4.0").
+  // Entries above the first release marker are shown as "Unreleased".
+  function groupEntriesByRelease(entries) {
+    var releases = [];
+    var current = null;
+
+    entries.forEach(function (entry) {
+      var versionMatch = entry.message.match(/(\d+\.\d+\.\d+)/);
+      var mentionsRelease = /version|ver\b|update|official|offical|release|bump/i.test(
+        entry.message,
+      );
+
+      if (versionMatch && mentionsRelease) {
+        var version = versionMatch[1];
+        if (!current || current.version !== version) {
+          current = { version: version, date: entry.date, entries: [] };
+          releases.push(current);
+        }
+      }
+
+      if (!current) {
+        current = { version: "Unreleased", date: entry.date, entries: [] };
+        releases.push(current);
+      }
+
+      current.entries.push(entry);
+    });
+
+    return releases;
+  }
+
+  function loadChangelog() {
+    if (changelogEntries) {
+      bodyEl.innerHTML = buildChangelogBody(changelogEntries);
+      return;
+    }
+
+    bodyEl.innerHTML =
+      '<p class="changelog-loading"><i class="bi bi-arrow-repeat" ' +
+      'aria-hidden="true"></i>Loading changelog&hellip;</p>';
+
+    fetch(CHANGELOG_MD_URL)
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error("HTTP " + response.status);
+        }
+        return response.text();
+      })
+      .then(function (text) {
+        var parsed = parseCommitHistory(text);
+        if (parsed.length === 0) {
+          throw new Error("No commits found in " + CHANGELOG_MD_URL);
+        }
+        changelogEntries = groupEntriesByRelease(parsed);
+        bodyEl.innerHTML = buildChangelogBody(changelogEntries);
+      })
+      .catch(function () {
+        bodyEl.innerHTML =
+          '<p class="changelog-error">' +
+          '<i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>' +
+          "Could not load the changelog." +
+          "</p>" +
+          '<button class="modal-button" type="button" data-retry-changelog>' +
+          "Retry" +
+          "</button>";
+
+        var retryButton = bodyEl.querySelector("[data-retry-changelog]");
+        if (retryButton) {
+          retryButton.addEventListener("click", function () {
+            changelogEntries = null;
+            loadChangelog();
+          });
+        }
+      });
+  }
 
   function escapeHtml(value) {
     return String(value)
@@ -262,7 +151,7 @@
   }
 
   function changelogBadgeHtml(type) {
-    var meta = CHANGELOG_TYPE_META[type] || CHANGELOG_TYPE_META.changed;
+    var meta = CHANGELOG_TYPE_META[type] || CHANGELOG_TYPE_META.change;
     return (
       '<span class="changelog-badge is-' +
       type +
@@ -282,15 +171,6 @@
       '<p class="changelog-message">' +
       escapeHtml(entry.message) +
       "</p>" +
-      // '<p class="changelog-meta">' +
-      // '<code class="changelog-hash">' +
-      // escapeHtml(entry.hash) +
-      // "</code>" +
-      // '<span class="changelog-meta-sep">&middot;</span>' +
-      // escapeHtml(entry.date) +
-      // '<span class="changelog-meta-sep">&middot;</span>' +
-      // escapeHtml(entry.author) +
-      // "</p>" +
       "</div>" +
       "</li>"
     );
@@ -322,24 +202,23 @@
     return html;
   }
 
-  function buildChangelogBody() {
+  function buildChangelogBody(releases) {
     var usedTypes = {};
     var totalCommits = 0;
     var releaseCount = 0;
 
-    CHANGELOG_RELEASES.forEach(function (release) {
+    releases.forEach(function (release) {
       if (release.version !== "Unreleased") {
         releaseCount += 1;
       }
       totalCommits += release.entries.length;
       release.entries.forEach(function (entry) {
-        usedTypes[CHANGELOG_TYPE_META[entry.type] ? entry.type : "changed"] =
-          true;
+        usedTypes[entry.type] = true;
       });
     });
 
     var legend = "";
-    ["added", "changed", "fixed", "removed"].forEach(function (type) {
+    ["add", "change", "fix", "remove"].forEach(function (type) {
       if (usedTypes[type]) {
         legend += changelogBadgeHtml(type);
       }
@@ -351,14 +230,14 @@
       totalCommits +
       " commits &middot; " +
       releaseCount +
-      " releases &middot; tracked in <code>COMMIT_HISTORY.md</code>" +
+      " releases &middot; from <code>COMMIT_HISTORY.md</code>" +
       "</span>" +
       '<span class="changelog-legend">' +
       legend +
       "</span>" +
       "</div>";
 
-    CHANGELOG_RELEASES.forEach(function (release) {
+    releases.forEach(function (release) {
       html += changelogReleaseHtml(release);
     });
 
@@ -395,7 +274,8 @@
     changelog: {
       title: "Changelog",
       titleIcon: "bi-clock-history",
-      body: buildChangelogBody(),
+      // Filled in asynchronously by loadChangelog() when the modal opens.
+      body: "",
     },
   };
 
@@ -433,6 +313,10 @@
       titleEl.classList.remove("has-icon");
     }
     bodyEl.innerHTML = content.body;
+
+    if (actionKey === "changelog") {
+      loadChangelog();
+    }
 
     overlay.hidden = false;
     document.body.style.overflow = "hidden";
