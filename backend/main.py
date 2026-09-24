@@ -5,7 +5,7 @@ Serves the static frontend (../frontend/index.html) inside a native window
 and exposes a JavaScript API (window.pywebview.api.*) for:
   - COM port listing / connect / disconnect
   - Native file selection (.bin / .csv)
-  - Firmware update dispatch (BIN flashing or CSV command replay)
+  - Mass update dispatch (BIN flashing or CSV command replay)
   - Automatic post-update FW version verification (PASS / FAIL)
   - Manual hex commands and quick commands
 """
@@ -42,7 +42,7 @@ SPLASH_WATCHDOG_SECONDS = 20.0
 BAUD_RATE = 115200
 
 FW_CHECK_CMD = "01 00 03 00 0D 04 00 15"
-FW_CHECK_DELAY_S = 3.0
+FW_CHECK_DELAY_S = 5.0
 
 FW_DATA_START = 3
 FW_DATA_LENGTH = 4
@@ -249,146 +249,8 @@ class JSAPI:
         return {"status": "SUCCESS", "path": path, "name": name, "size": size, "ext": ext}
 
     # ------------------------------------------------------------------
-    # Update dispatch (BIN or CSV) + automatic FW verification
+    # FW version verification (runs after every mass update cycle)
     # ------------------------------------------------------------------
-    def run_update(self, file_path: str, tool_type: str = "M12", expected_fw: str = ""):
-        if not self.is_connected or not self.comm:
-            return {"status": "ERROR", "message": "Serial port not connected"}
-
-        file_path = str(file_path).strip().strip("\"'")
-        if not os.path.exists(file_path):
-            return {"status": "ERROR", "message": f"File does not exist: {file_path}"}
-
-        ext = os.path.splitext(file_path)[1].lower().lstrip(".")
-        if ext not in ("bin", "csv"):
-            return {"status": "ERROR", "message": "Unsupported file type — choose a .bin or .csv file"}
-
-        tool_type = "M18" if str(tool_type).upper() == "M18" else "M12"
-        expected_fw = str(expected_fw).strip()
-        if expected_fw and not re.fullmatch(r"\d+(\.\d+){0,3}", expected_fw):
-            return {
-                "status": "ERROR",
-                "message": "Invalid FW version format — use decimal numbers separated by dots, e.g. 1.4.2",
-            }
-
-        self.controller.reset()
-        threading.Thread(
-            target=self._update_worker,
-            args=(file_path, ext, tool_type, expected_fw),
-            daemon=True,
-        ).start()
-        return {"status": "STARTED"}
-
-    def _update_worker(self, file_path: str, ext: str, tool_type: str, expected_fw: str):
-        update_ok = False
-        fail_reason = ""
-
-        try:
-            self.log("=" * 60)
-            self.log(
-                f"STARTING UPDATE — {os.path.basename(file_path)} "
-                f"({ext.upper()}, Tool: {tool_type})"
-            )
-            self.log("=" * 60)
-
-            if ext == "bin":
-                self.log("\nGenerating flashing script from BIN file...")
-                script_data = generate_and_save_bin_script(
-                    file_path, tool_type=tool_type, log_callback=self.log
-                )
-                if not script_data:
-                    raise RuntimeError("Failed to process BIN file / generate script")
-
-                self.log("\nStarting flashing sequence...")
-                update_ok = execute_bin_flashing_sequence(
-                    self.comm,
-                    script_data,
-                    log_callback=self.log,
-                    progress_callback=self._guarded_progress,
-                )
-                if not update_ok:
-                    fail_reason = "Flashing sequence failed"
-            else:
-                self.log("\nProcessing CSV command filter...")
-                csv_cmds = get_commands_from_csv(
-                    file_path, prefix="74", log_callback=self.log
-                )
-                if not csv_cmds:
-                    raise RuntimeError("No valid commands found in CSV")
-
-                init_cmds = []
-                cmd1_base = "70 01 01 11" if tool_type == "M12" else "70 01 01 01"
-                init_cmds.append(build_frame(cmd1_base))
-
-                seq = SeqIdTracker(start=5)
-                init_cmds.append(
-                    build_frame(f"01 {seq.get_and_inc()} 0A 00 3B 33 33 33 33 33 33 33 33")
-                )
-
-                full_cmds = init_cmds + csv_cmds
-                self.log(
-                    f"Sending {len(full_cmds)} commands "
-                    f"(2 init + {len(csv_cmds)} CSV commands)...",
-                )
-                update_ok = execute_command_list(
-                    self.comm,
-                    full_cmds,
-                    log_callback=self.log,
-                    progress_callback=self._guarded_progress,
-                )
-                if not update_ok:
-                    fail_reason = "CSV command execution failed"
-
-        except RuntimeError as e:
-            update_ok = False
-            fail_reason = str(e)
-        except Exception as e:
-            update_ok = False
-            fail_reason = f"Unexpected error: {e}"
-
-        detected_fw = None
-        check_state = None
-
-        if update_ok:
-            if expected_fw:
-                self.log(f"Update done - waiting {FW_CHECK_DELAY_S:.0f} s before FW check...")
-                time.sleep(FW_CHECK_DELAY_S)
-
-                self.log("Verifying firmware version...")
-                check = self.verify_fw_version(expected_fw)
-                detected_fw = check.get("detected")
-                check_state = check["pass"]
-            else:
-                self.log("\nNo expected FW version provided — skipping verification.")
-        elif not fail_reason:
-            fail_reason = "Update failed"
-
-        overall = "PASS" if update_ok else "FAIL"
-
-        if overall == "PASS":
-            self.log("\n=== UPDATE FINISHED: PASS ===")
-            if check_state is True:
-                self.log(f"FW version verified: {detected_fw}")
-            elif check_state is False:
-                self.log(
-                    f"WARNING: FW version check FAILED - "
-                    f"detected {detected_fw}, expected {expected_fw}"
-                )
-        else:
-            self.log(f"\n=== UPDATE FINISHED: FAIL — {fail_reason} ===")
-
-        self._push(
-            "onUpdateFinished",
-            {
-                "status": overall,
-                "reason": "" if overall == "PASS" else fail_reason,
-                "fwCheck": {
-                    "pass": check_state,
-                    "detected": detected_fw,
-                    "expected": expected_fw or None,
-                },
-            },
-        )
 
     def verify_fw_version(self, expected_fw: str):
         rx = send_and_get_final_rx(
@@ -511,11 +373,15 @@ class JSAPI:
 
             self._push("onMassStage", "verifying")
             self._wait_with_cancel(FW_CHECK_DELAY_S)
+            self._send_target_and_password_before_verify(tool_type)
             check = self.verify_fw_version(expected_fw)
+            passed = bool(check.get("pass"))
             return {
-                "pass": bool(check.get("pass")),
+                "pass": passed,
                 "detected": check.get("detected"),
-                "reason": check.get("reason") or "FW verification failed",
+                "reason": ""
+                if passed
+                else (check.get("reason") or "FW verification failed"),
             }
         except RuntimeError:
             raise
@@ -560,19 +426,56 @@ class JSAPI:
         target_base = "70 01 01 01" if tool_type == "M18" else "70 01 01 11"
         return self._send_cmd_and_get_rx(target_base, timeout_s=timeout_s)
 
+    def _send_target_and_password_before_verify(self, tool_type: str):
+        """
+        Runs the post-update handshake right after the firmware update has
+        finished and immediately before reading back the FW version:
+
+          1. Target command — M18='70 01 01 01' / M12='70 01 01 11'
+          2. Default METCO password command (01 01 0A 00 3B ...)
+
+        Both frames are sent through the 0x85 flow-control path so the MCU is in
+        the expected state for the FW version query.
+
+        Missing responses are only logged (non-fatal) — the following FW version
+        verification is what decides PASS / FAIL.
+        """
+        self.log("Sending target + default password commands before FW version check...")
+        rx_target, rx_pwd = self._send_unplug_verification_commands(
+            tool_type, timeout_s=0.5
+        )
+
+        if rx_target is None:
+            self.log("Warning: no response to target command before FW check.")
+        else:
+            self.log(f"Target command response: {rx_target.hex(' ').upper()}")
+
+        if rx_pwd is None:
+            self.log("Warning: no response to default password command before FW check.")
+        else:
+            self.log(f"Default password command response: {rx_pwd.hex(' ').upper()}")
+
+        return rx_target, rx_pwd
+
     def _send_unplug_verification_commands(self, tool_type: str, timeout_s: float = 0.5):
         """
-        Enhanced Unplug Detection:
-        Sends ONLY ONE selected Target command (based on user selection at start:
-        M18='70 01 01 01' or M12='70 01 01 11') and the Default Password command in sequence.
-        Both commands are checked with 0x85 flow control filter.
+        Shared Target + Default password sequence (0x85 flow-control checked):
+
+        Sends ONLY ONE selected Target command (based on the tool type chosen by
+        the operator: M18='70 01 01 01' or M12='70 01 01 11') followed by the
+        Default METCO Password command.
+
+        Used by:
+          - Enhanced Unplug Detection (is the tool still attached?)
+          - The post-update handshake before reading back the FW version
+            (see _send_target_and_password_before_verify)
+
         Returns tuple: (rx_target, rx_pwd)
         """
-        # Strictly select ONLY ONE target command based on user choice at start
-        target_base = "70 01 01 01" if tool_type == "M18" else "70 01 01 11"
+        # Strictly select ONLY ONE target command based on the operator's choice
         password_base = "01 01 0A 00 3B 33 33 33 33 33 33 33 33"
 
-        rx_target = self._send_cmd_and_get_rx(target_base, timeout_s=timeout_s)
+        rx_target = self._send_target_and_get_rx(tool_type, timeout_s=timeout_s)
         rx_pwd = self._send_cmd_and_get_rx(password_base, timeout_s=timeout_s)
 
         return rx_target, rx_pwd

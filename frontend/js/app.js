@@ -66,7 +66,7 @@
   }
 
   // Group entries into releases. A release starts at a commit whose
-  // message contains a semantic version (e.g. "update ver 1.4.0").
+  // message contains a semantic version (e.g. "update ver 1.5.0").
   // Entries above the first release marker are shown as "Unreleased".
   function groupEntriesByRelease(entries) {
     var releases = [];
@@ -74,9 +74,10 @@
 
     entries.forEach(function (entry) {
       var versionMatch = entry.message.match(/(\d+\.\d+\.\d+)/);
-      var mentionsRelease = /version|ver\b|update|official|offical|release|bump/i.test(
-        entry.message,
-      );
+      var mentionsRelease =
+        /version|ver\b|update|official|offical|release|bump/i.test(
+          entry.message,
+        );
 
       if (versionMatch && mentionsRelease) {
         var version = versionMatch[1];
@@ -267,7 +268,7 @@
         "<span>Software Hub Version</span>" +
         "</div>" +
         // Default badge; a launcher/backend integration may overwrite this.
-        '<span class="about-version-badge" id="settingsLauncherVersion">1.4.0</span>' +
+        '<span class="about-version-badge" id="settingsLauncherVersion">1.5.0</span>' +
         "</div>",
     },
 
