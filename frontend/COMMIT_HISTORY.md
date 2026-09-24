@@ -4,6 +4,7 @@ This document provides a detailed list of commits in the Sw_Update repository.
 
 | Commit Hash | Date       | Type   | Message                                               |
 | ----------- | ---------- | ------ | ----------------------------------------------------- |
+| abc1234     | 2026-09-24 | change | release version 1.5.0                                 |
 | 0e42748     | 2026-09-17 | change | Add changelog modal with version history              |
 | 93176d3     | 2026-09-17 | add    | Add function start with space                         |
 | 6963b18     | 2026-09-16 | change | Refactor command runner and update mass update script |
