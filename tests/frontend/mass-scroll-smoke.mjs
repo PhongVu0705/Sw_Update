@@ -77,6 +77,29 @@ async function focusMode(locked) {
 async function checkStatusNoScroll() {
   assert.equal(await evaluate(`(() => { const card = document.querySelector('[aria-label="PCBA STATUS"]'); return [card, ...card.querySelectorAll('*')].filter(el => el instanceof HTMLElement).every(el => !['auto', 'scroll'].includes(getComputedStyle(el).overflowY)); })()`), true, 'status and animation do not create vertical scrollbars')
 }
+async function checkUpdateAnimations() {
+  const layout = await evaluate(`(() => {
+    const card = document.querySelector('[aria-label="PCBA STATUS"]').getBoundingClientRect();
+    const chip = document.querySelector('[aria-label="PCBA update in progress"]');
+    const runner = document.querySelector('[aria-label="Dinosaur jumping over obstacles"]');
+    const rect = runner.getBoundingClientRect();
+    return { ratio: rect.width / card.width, right: rect.right, cardRight: card.right, left: rect.left, middle: card.left + card.width / 2, chip: Boolean(chip.querySelector('.data-flow') && chip.querySelector('.chip-core')), running: runner.getAnimations({ subtree: true }).some(a => a.playState === 'running') };
+  })()`)
+  assert.equal(layout.chip, true, 'original data-to-IC animation is present')
+  assert.equal(layout.running, true, 'dinosaur runner is animated')
+  assert.ok(layout.ratio >= .38 && layout.ratio <= .52, `runner occupies about half of the card: ${JSON.stringify(layout)}`)
+  assert.ok(layout.left >= layout.middle - 1 && layout.right <= layout.cardRight, 'runner stays in the right half')
+  assert.equal(await evaluate(`(() => {
+    const dino = document.querySelector('.dino-jump');
+    const animation = dino.getAnimations()[0];
+    const time = animation.currentTime;
+    animation.currentTime = 2600 * .68;
+    const rect = dino.getBoundingClientRect();
+    const scene = dino.parentElement.getBoundingClientRect();
+    animation.currentTime = time;
+    return rect.top >= scene.top && rect.bottom <= scene.bottom;
+  })()`), true, 'dinosaur stays inside the scene at the highest point of its jump')
+}
 const stageIs = (stage) => `Array.from(document.querySelectorAll('footer p')).some(p => p.textContent === ${JSON.stringify(stage)})`
 async function screenshot(name) {
   const artifacts = new URL('../../logs/ui-smoke/', import.meta.url)
@@ -124,10 +147,19 @@ try {
   await delay(100)
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Start').disabled`), true, 'Start requires a tool choice')
   await click('M18')
+  for (const ext of ['csv', 'bin']) {
+    await click('Demo file')
+    await waitFor(`document.querySelector('[aria-label="Choose simulated firmware"]')`)
+    await evaluate(`Array.from(document.querySelectorAll('[role="menuitem"]')).find(el => el.textContent === 'Demo .${ext}').click()`)
+    await waitFor(`document.querySelector('[aria-label="Firmware file selection"]').textContent.includes('demo-firmware.${ext}')`)
+    assert.equal(await evaluate(`document.querySelector('[aria-label="Firmware file selection"]').textContent.includes('SIMULATED')`), true, 'demo firmware is clearly labelled')
+  }
   await feedback(0x80, 0x81)
   await click('Start')
   await waitFor(stageIs('Programming MCU'))
   await waitFor(`document.querySelector('[aria-label="PCBA update in progress"]')`)
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Demo file').disabled`), true, 'demo selection is locked during an update')
+  await checkUpdateAnimations()
   await checkStatusNoScroll()
   assert.ok(await evaluate(`document.querySelector('[aria-label="PCBA STATUS"]').getBoundingClientRect().height < 240`), 'normal status card stays compact')
   assert.equal(await evaluate(`document.querySelector('[aria-label="PCBA update in progress"]').getAnimations({ subtree: true }).some(animation => animation.playState === 'running')`), true, 'update animation is running')
@@ -140,6 +172,7 @@ try {
   assert.equal(await evaluate(`document.querySelector('[aria-label="Actual firmware"]').textContent`), '1.4.2')
   assert.equal(await evaluate(`document.querySelector('[aria-label="Configured firmware"]').textContent`), '1.4.2')
   assert.equal(await evaluate(`Boolean(document.querySelector('[aria-label="PCBA update in progress"]'))`), false, 'animation stops after update')
+  assert.equal(await evaluate(`Boolean(document.querySelector('[aria-label="Dinosaur jumping over obstacles"]'))`), false, 'dinosaur disappears after update')
   await evaluate(`(() => { const controls = document.querySelector('[aria-label="Mass update controls"]'); controls.scrollTop = controls.scrollHeight; })()`)
   await screenshot('mass-status-ok')
   await focusMode(true)
@@ -196,6 +229,7 @@ try {
   for (const [width, height] of [[1280, 800], [1280, 600], [390, 844]]) {
     await resize(width, height)
     await checkViewport(true)
+    await checkUpdateAnimations()
     const before = await evaluate(`document.querySelector('[aria-label="PCBA STATUS"]').getBoundingClientRect().height`)
     for (let frame = 0; frame < 4; frame++) { await delay(100); await checkStatusNoScroll() }
     assert.equal(await evaluate(`document.querySelector('[aria-label="PCBA STATUS"]').getBoundingClientRect().height`), before, 'animation keeps layout stable')
@@ -204,7 +238,18 @@ try {
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
   await delay(100)
   assert.equal(await evaluate(`document.querySelector('[aria-label="PCBA update in progress"]').getAnimations({ subtree: true }).some(animation => animation.playState === 'running')`), false, 'reduced motion stops the animation')
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Dinosaur jumping over obstacles"]').getAnimations({ subtree: true }).some(animation => animation.playState === 'running')`), false, 'reduced motion stops the dinosaur animation')
   await send('Emulation.setEmulatedMedia', { features: [] })
+  await focusMode(false)
+  for (const [width, height] of [[1280, 800], [390, 844]]) {
+    await resize(width, height)
+    await checkViewport()
+    await checkUpdateAnimations()
+    await checkStatusNoScroll()
+    await evaluate(`(() => { const controls = document.querySelector('[aria-label="Mass update controls"]'); controls.scrollTop = controls.scrollHeight; })()`)
+    await screenshot(`mass-dinosaur-normal-${width}-${height}`)
+  }
+  await focusMode(true)
   // Exercise result/waiting visuals using bridge events within the held UI fixture.
   for (const [kind, label] of [['error', 'PCBA update failed'], ['waiting', 'Waiting for PCBA'], ['success', 'PCBA update successful']]) {
     await evaluate(`(() => { ${kind === 'waiting' ? "window.onMassStage('waiting_for_next_target');" : `window.onMassStage('programming'); window.onMassResult({ pass: ${kind === 'success'}, detected: '1.4.2', expected: '1.4.2', reason: ${JSON.stringify(kind === 'error' ? 'Simulated visual test failure' : '')} }); window.onMassStage('waiting_for_unplug');`} })()`)
@@ -228,7 +273,7 @@ try {
   assert.equal(await evaluate(`Boolean(document.querySelector('[aria-label="PCBA update in progress"]'))`), false)
   assert.equal(await evaluate(`document.querySelector('[aria-label="PCBA STATUS"]').getAnimations({ subtree: true }).some(animation => animation.playState === 'running')`), false, 'Stop leaves a static status')
   assert.deepEqual(errors, [])
-  console.log('Mass UI passed: updating/waiting/success/failure animations, no status scrollbars, reduced motion, static Stop, Focus resizing, two PCBA cycles, desktop/mobile.')
+  console.log('Mass UI passed: BIN/CSV demo selection, IC animation with dinosaur runner in right half, waiting/success/failure animations, no status scrollbars, reduced motion, static Stop, Focus resizing, two PCBA cycles, desktop/mobile.')
 } finally {
   socket.close()
   await fetch(`http://127.0.0.1:9222/json/close/${target.id}`)

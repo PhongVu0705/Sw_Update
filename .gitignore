@@ -35,4 +35,4 @@ backend/temp/
 *.frontend
 *.bak
 *.logs
-*.tests
+tests

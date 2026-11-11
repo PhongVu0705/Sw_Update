@@ -53,6 +53,10 @@ export function createMockAdapter(host, events) {
         input.click()
       })
     },
+    select_demo_file(ext = 'bin') {
+      if (!['bin', 'csv'].includes(ext)) throw new Error('Choose a .bin or .csv demo file.')
+      return { ...success, id: null, name: `demo-firmware.${ext}`, size: ext === 'bin' ? 65536 : 2048, ext, simulated: true }
+    },
     run_hex_command(command) {
       log(`>> ${command}`)
       log('<< OK (simulated response)')
