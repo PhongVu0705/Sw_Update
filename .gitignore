@@ -26,3 +26,13 @@ Desktop.ini
 
 # Runtime generated data
 backend/temp/
+
+
+# Application logs and test runtime data
+/logs/
+/.runtime/
+
+*.frontend
+*.bak
+*.logs
+*.tests

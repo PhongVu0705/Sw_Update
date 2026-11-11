@@ -1,0 +1,16 @@
+:root {
+  font-family: Inter, 'Segoe UI', Arial, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+body { margin: 0; min-width: 320px; }
+#root { min-height: 100vh; }
+button, input, textarea { font: inherit; }
+::selection { background: #f9d4da; }
+.skip-link { position: absolute; top: -80px; left: 16px; z-index: 2000; padding: 12px 20px; background: #fff; color: #a51024; }
+.skip-link:focus { top: 8px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
