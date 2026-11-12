@@ -12,6 +12,7 @@ class Events:
     def __init__(self):
         self.phase = None
         self.stages = []
+        self.logs = []
 
     def emit(self, event, phase):
         if event == 'onMassStage':
@@ -19,7 +20,7 @@ class Events:
             self.stages.append(phase)
 
     def log(self, message):
-        pass
+        self.logs.append(message)
 
 
 class BudgetController(RunController):
@@ -57,6 +58,7 @@ class PcbaPollingTests(unittest.TestCase):
                 def send(frame):
                     nonlocal pair
                     sent.append(frame)
+                    runner.on_tx(frame)
                     phase = events.phase
                     if len(sent) % 2:
                         self.assertEqual(frame, target)
@@ -75,6 +77,8 @@ class PcbaPollingTests(unittest.TestCase):
                 flashes = []
 
                 def flash():
+                    runner.on_tx(bytes.fromhex('70 FF'))
+                    runner.on_rx(bytes.fromhex('80 FF'))
                     flashes.append(len(sent))
                     if len(flashes) == 2:
                         controller.stop()
@@ -87,6 +91,11 @@ class PcbaPollingTests(unittest.TestCase):
                     'programming', 'waiting_for_unplug', 'waiting_for_next_target',
                     'programming', 'waiting_for_unplug',
                 ])
+                self.assertEqual(events.logs, [
+                    '[TX ->]: 70 FF', '[MCU RX]: 80 FF',
+                    'Tool removed', 'Tool attached',
+                    '[TX ->]: 70 FF', '[MCU RX]: 80 FF',
+                ])
                 # Stop remains latched; another attempt sends nothing.
                 with self.assertRaises(UpdateCancelled):
                     runner.send(QUICK_COMMANDS['fw_version'], wait_if_busy=False)
@@ -94,22 +103,28 @@ class PcbaPollingTests(unittest.TestCase):
 
     def test_stop_between_target_and_fw_sends_no_more_packets(self):
         controller = RunController()
-        runner = CommandRunner(lambda message: None, controller)
+        events = Events()
+        runner = CommandRunner(events.log, controller)
         sent = []
         flashes = []
 
         def send(frame):
             sent.append(frame)
+            runner.on_tx(frame)
             runner.on_rx(bytes([0x80, frame[1]]))
             controller.stop()
             return True
 
         runner.comm = SimpleNamespace(is_running=True, send_no_wait=send)
         with self.assertRaises(UpdateCancelled):
-            PcbaAutoCycle(Events(), poll_interval=0, timeout_ms=1).run(
+            PcbaAutoCycle(events, poll_interval=0, timeout_ms=1).run(
                 runner, 'M12', lambda: flashes.append('flash'))
         self.assertEqual(flashes, ['flash'])
         self.assertEqual(sent, [bytes.fromhex(QUICK_COMMANDS['target_m12'])])
+        self.assertEqual(events.logs, [])
+        runner.on_tx(bytes.fromhex('70 FF'))
+        runner.on_rx(bytes.fromhex('80 FF'))
+        self.assertEqual(events.logs, ['[TX ->]: 70 FF', '[MCU RX]: 80 FF'])
 
     def test_presence_probe_retries_after_busy_but_normal_commands_keep_busy_guard(self):
         runner = CommandRunner(lambda message: None)

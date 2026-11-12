@@ -1,5 +1,6 @@
 """Per-connection command exchange; no module-global RX/queue state."""
 
+from contextlib import contextmanager
 import threading
 import time
 
@@ -18,18 +19,35 @@ class CommandRunner:
         self._response = None
         self._expected_seq = None
         self._transport_failed = False
+        self._log_frames = True
+
+    @contextmanager
+    def suppress_frame_logs(self):
+        with self._condition:
+            previous = self._log_frames
+            self._log_frames = False
+        try:
+            yield
+        finally:
+            with self._condition:
+                self._log_frames = previous
 
     def on_rx(self, frame):
         with self._condition:
+            log_frame = self._log_frames
             self._last_frame = frame
             if len(frame) >= 2 and frame[1] == self._expected_seq and frame[0] in (0x80, 0x81, 0x82, 0x83):
                 self._response = frame
             self._condition.notify_all()
         # Deliver logs outside the RX condition; UI callbacks can be slow.
-        self.log(f"[MCU RX]: {frame.hex(' ').upper()}")
+        if log_frame:
+            self.log(f"[MCU RX]: {frame.hex(' ').upper()}")
 
     def on_tx(self, frame):
-        self.log(f"[TX ->]: {frame.hex(' ').upper()}")
+        with self._condition:
+            log_frame = self._log_frames
+        if log_frame:
+            self.log(f"[TX ->]: {frame.hex(' ').upper()}")
 
     def on_error(self):
         with self._condition:

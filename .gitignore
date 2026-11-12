@@ -36,3 +36,4 @@ backend/temp/
 *.bak
 *.logs
 tests
+*.tests

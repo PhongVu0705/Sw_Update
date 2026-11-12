@@ -72,7 +72,6 @@ export function createMockAdapter(host, events) {
     set_pcba_feedback(target, version) {
       if (![target, version].every((value) => value === null || (Number.isInteger(value) && value >= 0 && value <= 255))) throw new Error('Invalid simulated PCBA feedback')
       pcbaFeedback = [target, version]
-      log(`PCBA feedback: Target=${target?.toString(16).toUpperCase() ?? 'TIMEOUT'}, FW=${version?.toString(16).toUpperCase() ?? 'TIMEOUT'}`)
       return success
     },
     run_mass_update(port, fileId, toolType, expectedFw, autoPcba = false) {
@@ -88,6 +87,7 @@ export function createMockAdapter(host, events) {
           const before = cycle.phase
           cycle.observe(...pcbaFeedback)
           if (before !== cycle.phase) {
+            log(before === 'waiting_for_unplug' ? 'Tool removed' : 'Tool attached')
             events.emit('onMassStage', cycle.phase)
             if (cycle.phase === 'programming') progress = 0
           }
